@@ -599,7 +599,11 @@ function setupDoctor() {
         alert("Consultation chargée pour modification. Modifiez les champs et enregistrez à nouveau.");
     });
     
+    // CORRECTION : Initialisation de la recherche de rendez-vous
     document.getElementById('search-doctor-appointment').addEventListener('click', searchDoctorAppointment);
+    
+    // Charger les rendez-vous au chargement
+    loadDoctorAppointments();
 }
 
 function updateDoctorConsultationTypes() {
@@ -765,6 +769,7 @@ function updateDoctorLabResults(patientId) {
     container.innerHTML = html;
 }
 
+// CORRECTION : Ajout des fonctions manquantes pour la gestion des rendez-vous
 function loadDoctorAppointments() {
     const container = document.getElementById('doctor-appointment-results');
     const today = new Date().toISOString().split('T')[0];
@@ -778,11 +783,87 @@ function loadDoctorAppointments() {
         return;
     }
     
-    let html = '<h4>Vos rendez-vous</h4>';
-    html += '<table class="table-container"><thead><tr><th>Patient</th><th>Date</th><th>Heure</th><th>Motif</th></tr></thead><tbody>';
+    let html = '<h4>Vos rendez-vous à venir</h4>';
+    html += '<table class="table-container"><thead><tr><th>Patient</th><th>Date</th><th>Heure</th><th>Motif</th><th>Statut</th></tr></thead><tbody>';
+    
     doctorAppointments.forEach(app => {
-        html += `<tr><td>${app.patientName} (${app.patientId})</td><td>${app.date}</td><td>${app.time}</td><td>${app.reason}</td></tr>`;
+        const appDate = new Date(app.date);
+        const todayDate = new Date();
+        let status = 'À venir';
+        let statusClass = 'status-upcoming';
+        
+        if (appDate.toDateString() === todayDate.toDateString()) {
+            status = 'Aujourd\'hui';
+            statusClass = 'status-today';
+        }
+        
+        html += `
+            <tr>
+                <td>${app.patientName} (${app.patientId})</td>
+                <td>${app.date}</td>
+                <td>${app.time}</td>
+                <td>${app.reason}</td>
+                <td><span class="patient-status-badge ${statusClass}">${status}</span></td>
+            </tr>
+        `;
     });
+    
+    html += '</tbody></table>';
+    container.innerHTML = html;
+}
+
+function searchDoctorAppointment() {
+    const search = document.getElementById('doctor-appointment-search').value.toLowerCase();
+    const container = document.getElementById('doctor-appointment-results');
+    
+    if (!search) {
+        loadDoctorAppointments();
+        return;
+    }
+    
+    const doctorAppointments = state.appointments.filter(a => 
+        a.doctor === state.currentUser.username &&
+        (a.patientName.toLowerCase().includes(search) ||
+         a.patientId.toLowerCase().includes(search) ||
+         a.reason.toLowerCase().includes(search) ||
+         a.date.includes(search))
+    );
+    
+    if (doctorAppointments.length === 0) {
+        container.innerHTML = '<p>Aucun rendez-vous trouvé.</p>';
+        return;
+    }
+    
+    doctorAppointments.sort((a, b) => new Date(a.date + ' ' + a.time) - new Date(b.date + ' ' + b.time));
+    
+    let html = '<h4>Résultats de recherche</h4>';
+    html += '<table class="table-container"><thead><tr><th>Patient</th><th>Date</th><th>Heure</th><th>Motif</th><th>Statut</th></tr></thead><tbody>';
+    
+    doctorAppointments.forEach(app => {
+        const today = new Date();
+        const appDate = new Date(app.date);
+        let status = 'À venir';
+        let statusClass = 'status-upcoming';
+        
+        if (appDate < today) {
+            status = 'Passé';
+            statusClass = 'status-past';
+        } else if (appDate.toDateString() === today.toDateString()) {
+            status = 'Aujourd\'hui';
+            statusClass = 'status-today';
+        }
+        
+        html += `
+            <tr>
+                <td>${app.patientName} (${app.patientId})</td>
+                <td>${app.date}</td>
+                <td>${app.time}</td>
+                <td>${app.reason}</td>
+                <td><span class="patient-status-badge ${statusClass}">${status}</span></td>
+            </tr>
+        `;
+    });
+    
     html += '</tbody></table>';
     container.innerHTML = html;
 }
