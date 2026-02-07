@@ -4,10 +4,34 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function initApp() {
-    // Les modules sont initialisés par leurs propres fichiers
-    // Cette fonction assure que les données de démo sont chargées
+    // Initialiser les données de démo
     loadDemoData();
     
-    // Initialiser d'autres composants globaux si nécessaire
+    // Initialiser l'affichage du logo
+    updateLogoDisplay();
+    
+    // Vérifier l'expiration des privilèges au démarrage
+    checkPrivilegeExpirationAll();
+    
+    // Mettre à jour les badges de messages
+    updateMessageBadge();
+    
     console.log("Système hospitalier initialisé avec succès!");
+    
+    // Initialiser les composants globaux supplémentaires
+    if (typeof setupCashier === 'function') {
+        setupCashier();
+    }
+    
+    if (typeof setupAdmin === 'function') {
+        setupAdmin();
+    }
+    
+    if (typeof setupSettings === 'function') {
+        setupSettings();
+    }
+    
+    if (typeof setupMessaging === 'function') {
+        setupMessaging();
+    }
 }

@@ -35,6 +35,20 @@ function searchAdminPatient() {
         return;
     }
     
+    // Vérifier expiration des privilèges
+    if (patient.privilegeGrantedDate) {
+        const now = new Date();
+        const privilegeDate = new Date(patient.privilegeGrantedDate);
+        const hoursDiff = (now - privilegeDate) / (1000 * 60 * 60);
+        
+        if (hoursDiff >= 24) {
+            patient.vip = false;
+            patient.sponsored = false;
+            patient.discountPercentage = 0;
+            patient.privilegeGrantedDate = null;
+        }
+    }
+    
     document.getElementById('admin-patient-name').textContent = patient.fullName + ' (' + patient.id + ')';
     document.getElementById('admin-patient-details').classList.remove('hidden');
     
@@ -60,7 +74,8 @@ function searchAdminPatient() {
         html += '<tr><td colspan="5" class="text-center">Aucune transaction</td></tr>';
     } else {
         history.forEach(t => {
-            html += `<tr><td>${t.date}</td><td>${t.service}</td><td>${t.amount} Gdes</td><td>${t.status}</td><td>${t.type}</td></tr>`;
+            const amountUSD = t.amount / state.exchangeRate;
+            html += `<tr><td>${t.date}</td><td>${t.service}</td><td>${t.amount} Gdes (${amountUSD.toFixed(2)} $)</td><td>${t.status}</td><td>${t.type}</td></tr>`;
         });
     }
     html += '</tbody></table>';
@@ -78,9 +93,11 @@ function savePrivilege() {
     patient.vip = false;
     patient.sponsored = false;
     patient.discountPercentage = 0;
+    patient.privilegeGrantedDate = null;
     
     if (privilegeType === 'vip') {
         patient.vip = true;
+        patient.privilegeGrantedDate = new Date().toISOString();
         state.transactions.forEach(t => {
             if (t.patientId === patientId && t.status === 'unpaid') {
                 t.status = 'paid';
@@ -94,6 +111,7 @@ function savePrivilege() {
     } else if (privilegeType === 'sponsored') {
         patient.sponsored = true;
         patient.discountPercentage = discountPercentage;
+        patient.privilegeGrantedDate = new Date().toISOString();
         alert(`Patient marqué comme sponsorisé avec ${discountPercentage}% de réduction`);
     } else {
         alert("Privilèges retirés du patient");
@@ -103,30 +121,37 @@ function savePrivilege() {
 }
 
 function updateAdminStats() {
+    const exchangeRate = state.exchangeRate || 130;
+    
     const consultationTransactions = state.transactions.filter(t => t.type === 'consultation');
     const consultationAmount = consultationTransactions.reduce((sum, t) => sum + t.amount, 0);
+    const consultationAmountUSD = consultationAmount / exchangeRate;
     document.getElementById('admin-consultations-count').textContent = consultationTransactions.length;
-    document.getElementById('admin-consultations-amount').textContent = consultationAmount + ' Gdes';
+    document.getElementById('admin-consultations-amount').textContent = consultationAmount + ' Gdes (' + consultationAmountUSD.toFixed(2) + ' $)';
     
     const labTransactions = state.transactions.filter(t => t.type === 'lab');
     const labAmount = labTransactions.reduce((sum, t) => sum + t.amount, 0);
+    const labAmountUSD = labAmount / exchangeRate;
     document.getElementById('admin-analyses-count').textContent = labTransactions.length;
-    document.getElementById('admin-analyses-amount').textContent = labAmount + ' Gdes';
+    document.getElementById('admin-analyses-amount').textContent = labAmount + ' Gdes (' + labAmountUSD.toFixed(2) + ' $)';
     
     const medTransactions = state.transactions.filter(t => t.type === 'medication');
     const medAmount = medTransactions.reduce((sum, t) => sum + t.amount, 0);
+    const medAmountUSD = medAmount / exchangeRate;
     document.getElementById('admin-medications-count').textContent = medTransactions.length;
-    document.getElementById('admin-medications-amount').textContent = medAmount + ' Gdes';
+    document.getElementById('admin-medications-amount').textContent = medAmount + ' Gdes (' + medAmountUSD.toFixed(2) + ' $)';
     
     const externalTransactions = state.transactions.filter(t => t.type === 'external');
     const externalAmount = externalTransactions.reduce((sum, t) => sum + t.amount, 0);
+    const externalAmountUSD = externalAmount / exchangeRate;
     document.getElementById('admin-external-count').textContent = externalTransactions.length;
-    document.getElementById('admin-external-amount').textContent = externalAmount + ' Gdes';
+    document.getElementById('admin-external-amount').textContent = externalAmount + ' Gdes (' + externalAmountUSD.toFixed(2) + ' $)';
     
     const totalRevenue = state.transactions
         .filter(t => t.status === 'paid')
         .reduce((sum, t) => sum + t.amount, 0);
-    document.getElementById('admin-total-revenue').textContent = totalRevenue + ' Gdes';
+    const totalRevenueUSD = totalRevenue / exchangeRate;
+    document.getElementById('admin-total-revenue').textContent = totalRevenue + ' Gdes (' + totalRevenueUSD.toFixed(2) + ' $)';
     
     updateRecentTransactions();
 }
@@ -218,12 +243,13 @@ function updateRecentTransactions() {
     let html = '';
     
     recent.forEach(transaction => {
+        const amountUSD = transaction.amount / state.exchangeRate;
         html += `
             <tr>
                 <td>${transaction.date} ${transaction.time}</td>
                 <td>${transaction.patientName}<br><small>${transaction.patientId}</small></td>
                 <td>${transaction.service}</td>
-                <td>${transaction.amount} Gdes</td>
+                <td>${transaction.amount} Gdes (${amountUSD.toFixed(2)} $)</td>
                 <td>${transaction.paymentMethod || '-'}</td>
                 <td>${transaction.createdBy}</td>
                 <td><span class="${transaction.status === 'paid' ? 'status-paid' : 'status-unpaid'}">${transaction.status === 'paid' ? 'Payé' : 'Non payé'}</span></td>
@@ -385,7 +411,6 @@ function saveHospitalInfo() {
     const address = document.getElementById('hospital-address').value;
     const phone = document.getElementById('hospital-phone').value;
     
-    // Mettre à jour les affichages dans l'application
     document.getElementById('hospital-name-header').textContent = name;
     document.getElementById('hospital-address-header').textContent = address;
     document.getElementById('hospital-name-login').textContent = name;

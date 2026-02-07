@@ -349,6 +349,16 @@
                 <h2 class="section-title">Caisse</h2>
                 
                 <div class="card">
+                    <h3><i class="fas fa-exchange-alt"></i> Taux de Change</h3>
+                    <div class="d-flex" style="gap:15px; align-items: center; margin-bottom: 15px;">
+                        <label for="exchange-rate">1 $ =</label>
+                        <input type="number" id="exchange-rate" class="form-control" style="width:100px;" value="130" min="1">
+                        <label>Gdes</label>
+                        <button id="update-exchange-rate" class="btn btn-secondary">Mettre à jour</button>
+                    </div>
+                </div>
+                
+                <div class="card">
                     <h3><i class="fas fa-search"></i> Rechercher Patient</h3>
                     <div class="d-flex" style="gap:15px;">
                         <input type="text" id="cashier-patient-search" class="form-control" placeholder="ID patient ou nom">
@@ -365,16 +375,21 @@
                             <div id="services-to-pay-list"></div>
                             
                             <div class="cashier-total">
-                                <h3>Total à payer: <span id="total-to-pay">0</span> Gdes</h3>
+                                <h3>Total à payer: <span id="total-to-pay">0</span> Gdes (<span id="total-to-pay-usd">0.00</span> $)</h3>
                             </div>
                         </div>
                         
-                        <div class="change-money-container">
-                            <h4>Calcul de monnaie</h4>
-                            <div class="d-flex" style="gap:15px; align-items: center;">
-                                <label>Montant donné:</label>
-                                <input type="number" id="amount-given" class="form-control" style="width:150px;" placeholder="Montant en Gdes" min="0">
-                                <div class="change-money-result" id="change-result">Monnaie: 0 Gdes</div>
+                        <div class="mt-3">
+                            <h4>Devise de paiement</h4>
+                            <div class="payment-method-currency-selector">
+                                <div class="payment-method-currency active" data-currency="HTG">
+                                    <i class="fas fa-money-bill-wave"></i>
+                                    <p>Gourdes (HTG)</p>
+                                </div>
+                                <div class="payment-method-currency" data-currency="USD">
+                                    <i class="fas fa-dollar-sign"></i>
+                                    <p>Dollars (USD)</p>
+                                </div>
                             </div>
                         </div>
                         
@@ -397,6 +412,19 @@
                                     <i class="fas fa-credit-card fa-2x"></i>
                                     <p>Carte bancaire</p>
                                 </div>
+                                <div class="payment-method" data-method="external">
+                                    <i class="fas fa-external-link-alt fa-2x"></i>
+                                    <p>Paiement externe</p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="change-money-container">
+                            <h4>Calcul de monnaie</h4>
+                            <div class="d-flex" style="gap:15px; align-items: center;">
+                                <label>Montant donné:</label>
+                                <input type="number" id="amount-given" class="form-control" style="width:150px;" placeholder="Montant en Gdes" min="0">
+                                <div class="change-money-result" id="change-result">Monnaie: 0 Gdes</div>
                             </div>
                         </div>
                         
@@ -420,6 +448,7 @@
                                 <h3 id="invoice-hospital-name">Hôpital Saint-Luc</h3>
                                 <p id="invoice-hospital-address">Port-au-Prince, Haïti</p>
                                 <p id="invoice-hospital-phone">Tél: (509) 1234-5678</p>
+                                <p id="invoice-exchange-rate" style="font-size: 0.9rem; color: #666;">Taux: 1 $ = 130 Gdes</p>
                             </div>
                             <hr>
                             <div>

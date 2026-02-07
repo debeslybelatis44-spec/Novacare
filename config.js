@@ -51,20 +51,18 @@ const state = {
     currentConversation: null,
     currentModifiedConsultation: null,
     currentModifiedAnalysis: null,
-    hospitalLogo: null
+    hospitalLogo: null,
+    exchangeRate: 130
 };
 
-// Fonctions utilitaires globales
 function updateLogoDisplay() {
     if (state.hospitalLogo) {
-        // Mettre à jour le logo dans l'en-tête
         const headerLogo = document.getElementById('header-logo');
         const headerIcon = document.getElementById('header-icon');
         headerLogo.src = state.hospitalLogo;
         headerLogo.style.display = 'block';
         headerIcon.style.display = 'none';
         
-        // Mettre à jour le logo dans l'écran de connexion
         const loginLogo = document.getElementById('login-logo');
         const loginIcon = document.getElementById('login-icon');
         loginLogo.src = state.hospitalLogo;
@@ -198,6 +196,25 @@ function viewPatientCard(patientId) {
     }, 500);
 }
 
+function checkPrivilegeExpirationAll() {
+    const now = new Date();
+    state.patients.forEach(patient => {
+        if (patient.privilegeGrantedDate) {
+            const privilegeDate = new Date(patient.privilegeGrantedDate);
+            const hoursDiff = (now - privilegeDate) / (1000 * 60 * 60);
+            
+            if (hoursDiff >= 24) {
+                patient.vip = false;
+                patient.sponsored = false;
+                patient.discountPercentage = 0;
+                patient.privilegeGrantedDate = null;
+                
+                console.log(`Privilèges expirés pour ${patient.fullName} (${patient.id})`);
+            }
+        }
+    });
+}
+
 function loadDemoData() {
     state.patients.push(
         {
@@ -211,6 +228,7 @@ function loadDemoData() {
             vip: false,
             sponsored: false,
             discountPercentage: 0,
+            privilegeGrantedDate: null,
             registrationDate: new Date().toISOString().split('T')[0],
             registrationTime: '08:30',
             registeredBy: 'secretary'
@@ -226,6 +244,7 @@ function loadDemoData() {
             vip: true,
             sponsored: false,
             discountPercentage: 0,
+            privilegeGrantedDate: new Date().toISOString(),
             registrationDate: new Date().toISOString().split('T')[0],
             registrationTime: '09:15',
             registeredBy: 'secretary'
@@ -241,6 +260,7 @@ function loadDemoData() {
             vip: false,
             sponsored: true,
             discountPercentage: 20,
+            privilegeGrantedDate: new Date().toISOString(),
             registrationDate: new Date().toISOString().split('T')[0],
             registrationTime: '10:00',
             registeredBy: 'secretary'
@@ -256,6 +276,7 @@ function loadDemoData() {
             vip: false,
             sponsored: false,
             discountPercentage: 0,
+            privilegeGrantedDate: null,
             registrationDate: new Date().toISOString().split('T')[0],
             registrationTime: '11:00',
             registeredBy: 'secretary'
@@ -324,7 +345,11 @@ function loadDemoData() {
             paymentMethod: 'cash',
             paymentDate: new Date().toISOString().split('T')[0],
             paymentTime: '09:00',
-            paymentAgent: 'cashier'
+            paymentAgent: 'cashier',
+            paymentCurrency: 'HTG',
+            exchangeRate: 130,
+            amountGiven: 500,
+            amountGivenInHTG: 500
         },
         {
             id: 'TR0002',
@@ -340,7 +365,11 @@ function loadDemoData() {
             paymentMethod: 'vip',
             paymentDate: new Date().toISOString().split('T')[0],
             paymentTime: '09:30',
-            paymentAgent: 'system'
+            paymentAgent: 'system',
+            paymentCurrency: 'HTG',
+            exchangeRate: 130,
+            amountGiven: 0,
+            amountGivenInHTG: 0
         },
         {
             id: 'EXT0001',

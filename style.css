@@ -219,3 +219,132 @@ tr:hover { background-color: #f8fbff; }
 .signature-area { margin-top: 80px; }
 .logo-upload-container { margin: 10px 0; }
 .logo-preview { max-width: 100px; max-height: 100px; margin: 10px 0; }
+/* Ajouter à la fin du fichier */
+
+.payment-method-currency-selector {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 15px;
+}
+
+.payment-method-currency {
+    padding: 8px 15px;
+    border: 2px solid #ddd;
+    border-radius: 5px;
+    background: white;
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.3s;
+}
+
+.payment-method-currency.active {
+    border-color: #1a6bca;
+    background-color: #e7f3ff;
+    color: #1a6bca;
+}
+
+.payment-method-currency:hover {
+    background-color: #f5f9ff;
+}
+
+.payment-method[data-method="external"] {
+    border-color: #6f42c1;
+}
+
+.payment-method[data-method="external"].active {
+    background-color: #6f42c1;
+    color: white;
+}
+
+.currency-display {
+    display: flex;
+    flex-direction: column;
+}
+
+.currency-htg {
+    font-weight: bold;
+}
+
+.currency-usd {
+    font-size: 0.85rem;
+    color: #6c757d;
+}
+
+.service-amount-usd {
+    color: #6c757d;
+    font-size: 0.9rem;
+    margin-left: 5px;
+}
+
+.cashier-total h3 {
+    color: #1a6bca;
+    font-size: 1.5rem;
+}
+
+.cashier-total h3 span {
+    color: #dc3545;
+}
+
+.vip-expiring {
+    background-color: #ffc107 !important;
+    color: #212529 !important;
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0% { opacity: 1; }
+    50% { opacity: 0.7; }
+    100% { opacity: 1; }
+}
+
+/* Pour l'impression de l'historique */
+@media print {
+    body * {
+        visibility: hidden;
+    }
+    .print-receipt, .print-receipt * {
+        visibility: visible;
+    }
+    .print-receipt {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+    }
+}
+
+.external-payment-note {
+    background-color: #fff3cd;
+    padding: 10px;
+    border-radius: 5px;
+    margin: 10px 0;
+    border-left: 4px solid #ffc107;
+    font-size: 0.9rem;
+}
+
+.external-payment-note p {
+    margin: 0;
+    color: #856404;
+}
+
+/* Amélioration de l'affichage des tableaux */
+.table-container table td .currency-display {
+    line-height: 1.4;
+}
+
+/* Ajustement pour les boutons de devise */
+.payment-method-selector {
+    grid-template-columns: repeat(5, 1fr);
+}
+
+@media (max-width: 1200px) {
+    .payment-method-selector {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+
+@media (max-width: 768px) {
+    .payment-method-selector {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
