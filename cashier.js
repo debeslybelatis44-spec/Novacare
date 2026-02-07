@@ -42,7 +42,8 @@ function setupCashier() {
     
     function calculateChange() {
         const totalHTG = parseFloat(document.getElementById('total-to-pay').textContent) || 0;
-        const given = parseFloat(document.getElementById('amount-given').value);
+        const totalUSD = totalHTG / exchangeRate;
+        const given = parseFloat(document.getElementById('amount-given').value) || 0;
         const paymentCurrency = document.querySelector('.payment-method-currency.active')?.dataset.currency || 'HTG';
         
         if (isNaN(given) || given <= 0) {
@@ -51,35 +52,36 @@ function setupCashier() {
             return;
         }
         
-        // Convertir le montant donné en HTG selon la devise
-        let givenInHTG = given;
+        // Vérifier si le montant donné est suffisant
         if (paymentCurrency === 'USD') {
-            givenInHTG = given * exchangeRate;
-        }
-        
-        if (givenInHTG < totalHTG) {
-            const missingHTG = totalHTG - givenInHTG;
-            const missingUSD = missingHTG / exchangeRate;
-            
-            if (paymentCurrency === 'USD') {
+            // Le montant donné est en USD, comparer avec totalUSD
+            if (given < totalUSD) {
+                const missingUSD = totalUSD - given;
+                const missingHTG = missingUSD * exchangeRate;
                 document.getElementById('change-result').textContent = `Manquant: ${missingUSD.toFixed(2)} $ (${missingHTG.toFixed(2)} Gdes)`;
-            } else {
-                document.getElementById('change-result').textContent = `Manquant: ${missingHTG.toFixed(2)} Gdes (${missingUSD.toFixed(2)} $)`;
+                document.getElementById('change-result').style.color = '#dc3545';
+                return;
             }
-            document.getElementById('change-result').style.color = '#dc3545';
-            return;
-        }
-        
-        const changeHTG = givenInHTG - totalHTG;
-        const changeUSD = changeHTG / exchangeRate;
-        
-        // Afficher la monnaie dans la devise de paiement et en HTG
-        if (paymentCurrency === 'USD') {
+            
+            const changeUSD = given - totalUSD;
+            const changeHTG = changeUSD * exchangeRate;
             document.getElementById('change-result').textContent = `Monnaie: ${changeUSD.toFixed(2)} $ (${changeHTG.toFixed(2)} Gdes)`;
+            document.getElementById('change-result').style.color = '#28a745';
         } else {
+            // Le montant donné est en HTG, comparer avec totalHTG
+            if (given < totalHTG) {
+                const missingHTG = totalHTG - given;
+                const missingUSD = missingHTG / exchangeRate;
+                document.getElementById('change-result').textContent = `Manquant: ${missingHTG.toFixed(2)} Gdes (${missingUSD.toFixed(2)} $)`;
+                document.getElementById('change-result').style.color = '#dc3545';
+                return;
+            }
+            
+            const changeHTG = given - totalHTG;
+            const changeUSD = changeHTG / exchangeRate;
             document.getElementById('change-result').textContent = `Monnaie: ${changeHTG.toFixed(2)} Gdes (${changeUSD.toFixed(2)} $)`;
+            document.getElementById('change-result').style.color = '#28a745';
         }
-        document.getElementById('change-result').style.color = '#28a745';
     }
     
     document.getElementById('search-cashier-patient').addEventListener('click', () => {
@@ -230,31 +232,31 @@ function setupCashier() {
             return;
         }
         
-        const given = parseFloat(document.getElementById('amount-given').value);
+        const given = parseFloat(document.getElementById('amount-given').value) || 0;
         const paymentCurrency = document.querySelector('.payment-method-currency.active')?.dataset.currency || 'HTG';
         const total = parseFloat(document.getElementById('total-to-pay').textContent);
+        const totalUSD = total / exchangeRate;
         
         if (isNaN(given) || given <= 0) {
             alert("Veuillez entrer un montant valide!");
             return;
         }
         
-        // Convertir en HTG pour vérifier si le montant est suffisant
-        let givenInHTG = given;
+        // Vérifier si le montant est suffisant selon la devise
         if (paymentCurrency === 'USD') {
-            givenInHTG = given * exchangeRate;
-        }
-        
-        if (givenInHTG < total) {
-            const missing = total - givenInHTG;
-            const missingUSD = missing / exchangeRate;
-            
-            if (paymentCurrency === 'USD') {
-                alert(`Montant insuffisant! Il manque ${missingUSD.toFixed(2)} $ (${missing.toFixed(2)} Gdes).`);
-            } else {
-                alert(`Montant insuffisant! Il manque ${missing.toFixed(2)} Gdes (${missingUSD.toFixed(2)} $).`);
+            if (given < totalUSD) {
+                const missingUSD = totalUSD - given;
+                const missingHTG = missingUSD * exchangeRate;
+                alert(`Montant insuffisant! Il manque ${missingUSD.toFixed(2)} $ (${missingHTG.toFixed(2)} Gdes).`);
+                return;
             }
-            return;
+        } else {
+            if (given < total) {
+                const missingHTG = total - given;
+                const missingUSD = missingHTG / exchangeRate;
+                alert(`Montant insuffisant! Il manque ${missingHTG.toFixed(2)} Gdes (${missingUSD.toFixed(2)} $).`);
+                return;
+            }
         }
         
         const paymentMethodElement = document.querySelector('.payment-method.active');
@@ -267,6 +269,18 @@ function setupCashier() {
         
         // Sauvegarder les services payés pour la facture
         currentPaidServices = [...selectedServices];
+        
+        // Calculer la monnaie à rendre
+        let changeHTG = 0;
+        let changeUSD = 0;
+        
+        if (paymentCurrency === 'USD') {
+            changeUSD = given - totalUSD;
+            changeHTG = changeUSD * exchangeRate;
+        } else {
+            changeHTG = given - total;
+            changeUSD = changeHTG / exchangeRate;
+        }
         
         selectedServices.forEach(transaction => {
             const transactionIndex = state.transactions.findIndex(t => t.id === transaction.id);
@@ -291,12 +305,9 @@ function setupCashier() {
             }
         });
         
-        // Afficher le reçu dans la devise de paiement
-        const changeHTG = givenInHTG - total;
-        const changeUSD = changeHTG / exchangeRate;
-        
+        // Afficher le message de confirmation
         let paymentMessage = "Paiement enregistré avec succès!\n";
-        paymentMessage += `Montant total: ${total.toFixed(2)} Gdes (${(total/exchangeRate).toFixed(2)} $)\n`;
+        paymentMessage += `Montant total: ${total.toFixed(2)} Gdes (${totalUSD.toFixed(2)} $)\n`;
         paymentMessage += `Montant donné: ${given.toFixed(2)} ${paymentCurrency}\n`;
         
         if (paymentCurrency === 'USD') {
@@ -321,6 +332,152 @@ function setupCashier() {
         }
         generateInvoice(selectedServices);
     });
+    
+    function generateInvoice(servicesToInvoice = null) {
+        const search = document.getElementById('cashier-patient-search').value.toLowerCase();
+        const patient = state.patients.find(p => 
+            p.id.toLowerCase() === search || 
+            p.fullName.toLowerCase().includes(search)
+        );
+        
+        if (!patient) {
+            alert("Veuillez d'abord rechercher un patient!");
+            return;
+        }
+        
+        // Utiliser les services passés en paramètre ou les services sélectionnés actuels
+        const services = servicesToInvoice || selectedServices;
+        
+        if (!services || services.length === 0) {
+            alert("Aucun service à facturer!");
+            return;
+        }
+        
+        // Récupérer les valeurs des champs
+        const given = parseFloat(document.getElementById('amount-given').value) || 0;
+        const total = services.reduce((sum, t) => sum + t.finalAmount, 0);
+        const totalUSD = total / exchangeRate;
+        
+        // Récupérer la devise de paiement
+        const paymentCurrencyElement = document.querySelector('.payment-method-currency.active');
+        const paymentCurrency = paymentCurrencyElement ? paymentCurrencyElement.dataset.currency : 'HTG';
+        
+        const paymentMethodElement = document.querySelector('.payment-method.active');
+        const selectedMethod = paymentMethodElement ? paymentMethodElement.dataset.method : 'Non spécifié';
+        
+        // Calculer la monnaie à rendre
+        let givenInHTG = given;
+        let changeHTG = 0;
+        let changeUSD = 0;
+        
+        if (paymentCurrency === 'USD') {
+            givenInHTG = given * exchangeRate;
+            if (given >= totalUSD) {
+                changeUSD = given - totalUSD;
+                changeHTG = changeUSD * exchangeRate;
+            }
+        } else {
+            if (given >= total) {
+                changeHTG = given - total;
+                changeUSD = changeHTG / exchangeRate;
+            }
+        }
+        
+        // Mettre à jour les informations de l'hôpital
+        if (document.getElementById('hospital-name')) {
+            document.getElementById('invoice-hospital-name').textContent = document.getElementById('hospital-name').value || 'Hôpital';
+        }
+        if (document.getElementById('hospital-address')) {
+            document.getElementById('invoice-hospital-address').textContent = document.getElementById('hospital-address').value || '';
+        }
+        if (document.getElementById('hospital-phone')) {
+            document.getElementById('invoice-hospital-phone').textContent = document.getElementById('hospital-phone').value || '';
+        }
+        
+        if (state.hospitalLogo) {
+            document.getElementById('invoice-logo').src = state.hospitalLogo;
+            document.getElementById('invoice-logo').style.display = 'block';
+        } else {
+            document.getElementById('invoice-logo').style.display = 'none';
+        }
+        
+        // Mettre à jour les informations du patient
+        document.getElementById('invoice-patient-name').textContent = patient.fullName;
+        document.getElementById('invoice-patient-id').textContent = patient.id;
+        document.getElementById('invoice-date').textContent = new Date().toLocaleDateString('fr-FR');
+        document.getElementById('invoice-time').textContent = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+        
+        // Mettre à jour les montants avec les deux devises
+        document.getElementById('invoice-total-amount').textContent = `${total.toFixed(2)} Gdes (${totalUSD.toFixed(2)} $)`;
+        
+        // Afficher le montant donné dans la devise appropriée
+        if (paymentCurrency === 'USD') {
+            document.getElementById('invoice-amount-given').textContent = `${given.toFixed(2)} $ (${givenInHTG.toFixed(2)} Gdes)`;
+        } else {
+            document.getElementById('invoice-amount-given').textContent = `${given.toFixed(2)} Gdes (${(given/exchangeRate).toFixed(2)} $)`;
+        }
+        
+        // Afficher la monnaie rendue dans la devise appropriée
+        if (paymentCurrency === 'USD') {
+            if (given >= totalUSD) {
+                document.getElementById('invoice-change').textContent = `${changeUSD.toFixed(2)} $ (${changeHTG.toFixed(2)} Gdes)`;
+            } else {
+                const missingUSD = totalUSD - given;
+                const missingHTG = missingUSD * exchangeRate;
+                document.getElementById('invoice-change').textContent = `Manquant: ${missingUSD.toFixed(2)} $ (${missingHTG.toFixed(2)} Gdes)`;
+            }
+        } else {
+            if (given >= total) {
+                document.getElementById('invoice-change').textContent = `${changeHTG.toFixed(2)} Gdes (${changeUSD.toFixed(2)} $)`;
+            } else {
+                const missingHTG = total - given;
+                const missingUSD = missingHTG / exchangeRate;
+                document.getElementById('invoice-change').textContent = `Manquant: ${missingHTG.toFixed(2)} Gdes (${missingUSD.toFixed(2)} $)`;
+            }
+        }
+        
+        document.getElementById('invoice-payment-method').textContent = `${selectedMethod} (${paymentCurrency})`;
+        document.getElementById('invoice-number').textContent = 'INV' + Date.now();
+        
+        // Ajouter le taux de change sur la facture
+        const exchangeRateDisplay = document.getElementById('invoice-exchange-rate');
+        if (exchangeRateDisplay) {
+            exchangeRateDisplay.textContent = `Taux: 1 $ = ${exchangeRate} Gdes`;
+        }
+        
+        // Mettre à jour la liste des services
+        let servicesHtml = '';
+        services.forEach(transaction => {
+            const transactionUSD = transaction.finalAmount / exchangeRate;
+            servicesHtml += `
+                <div class="receipt-item">
+                    <span>${transaction.service}</span>
+                    <span>${transaction.finalAmount.toFixed(2)} Gdes (${transactionUSD.toFixed(2)} $)</span>
+                </div>
+            `;
+        });
+        
+        document.getElementById('invoice-services-list').innerHTML = servicesHtml;
+        
+        // Afficher la facture
+        const container = document.getElementById('invoice-container');
+        container.classList.remove('hidden');
+        
+        // Configurer l'impression
+        setTimeout(() => {
+            const printContent = container.innerHTML;
+            const originalContent = document.body.innerHTML;
+            
+            document.body.innerHTML = printContent;
+            window.print();
+            document.body.innerHTML = originalContent;
+            
+            // Restaurer les écouteurs d'événements
+            setupCashier();
+            
+            container.classList.add('hidden');
+        }, 500);
+    }
 }
 
 function updateExternalMedications(patientId) {
@@ -360,132 +517,6 @@ function updateExternalMedications(patientId) {
     
     list.innerHTML = html;
     container.classList.remove('hidden');
-}
-
-function generateInvoice(servicesToInvoice = null) {
-    const search = document.getElementById('cashier-patient-search').value.toLowerCase();
-    const patient = state.patients.find(p => 
-        p.id.toLowerCase() === search || 
-        p.fullName.toLowerCase().includes(search)
-    );
-    
-    if (!patient) {
-        alert("Veuillez d'abord rechercher un patient!");
-        return;
-    }
-    
-    // Utiliser les services passés en paramètre ou les services sélectionnés actuels
-    const services = servicesToInvoice || selectedServices;
-    
-    if (!services || services.length === 0) {
-        alert("Aucun service à facturer!");
-        return;
-    }
-    
-    // Récupérer les valeurs des champs
-    const given = parseFloat(document.getElementById('amount-given').value) || 0;
-    const total = services.reduce((sum, t) => sum + t.finalAmount, 0);
-    const change = given - total;
-    
-    // Récupérer la devise de paiement
-    const paymentCurrencyElement = document.querySelector('.payment-method-currency.active');
-    const paymentCurrency = paymentCurrencyElement ? paymentCurrencyElement.dataset.currency : 'HTG';
-    
-    // Récupérer le taux de change
-    const exchangeRateInput = document.getElementById('exchange-rate');
-    const exchangeRate = exchangeRateInput ? parseFloat(exchangeRateInput.value) || 130 : 130;
-    
-    const paymentMethodElement = document.querySelector('.payment-method.active');
-    const selectedMethod = paymentMethodElement ? paymentMethodElement.dataset.method : 'Non spécifié';
-    
-    // Calculer les équivalents en USD
-    const totalUSD = total / exchangeRate;
-    const givenInHTG = paymentCurrency === 'USD' ? given * exchangeRate : given;
-    const changeInHTG = givenInHTG - total;
-    const changeUSD = changeInHTG / exchangeRate;
-    
-    // Mettre à jour les informations de l'hôpital
-    if (document.getElementById('hospital-name')) {
-        document.getElementById('invoice-hospital-name').textContent = document.getElementById('hospital-name').value || 'Hôpital';
-    }
-    if (document.getElementById('hospital-address')) {
-        document.getElementById('invoice-hospital-address').textContent = document.getElementById('hospital-address').value || '';
-    }
-    if (document.getElementById('hospital-phone')) {
-        document.getElementById('invoice-hospital-phone').textContent = document.getElementById('hospital-phone').value || '';
-    }
-    
-    if (state.hospitalLogo) {
-        document.getElementById('invoice-logo').src = state.hospitalLogo;
-        document.getElementById('invoice-logo').style.display = 'block';
-    } else {
-        document.getElementById('invoice-logo').style.display = 'none';
-    }
-    
-    // Mettre à jour les informations du patient
-    document.getElementById('invoice-patient-name').textContent = patient.fullName;
-    document.getElementById('invoice-patient-id').textContent = patient.id;
-    document.getElementById('invoice-date').textContent = new Date().toLocaleDateString('fr-FR');
-    document.getElementById('invoice-time').textContent = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-    
-    // Mettre à jour les montants avec les deux devises
-    document.getElementById('invoice-total-amount').textContent = `${total.toFixed(2)} Gdes (${totalUSD.toFixed(2)} $)`;
-    
-    // Afficher le montant donné dans la devise appropriée
-    if (paymentCurrency === 'USD') {
-        document.getElementById('invoice-amount-given').textContent = `${given.toFixed(2)} $ (${givenInHTG.toFixed(2)} Gdes)`;
-    } else {
-        document.getElementById('invoice-amount-given').textContent = `${given.toFixed(2)} Gdes (${(given/exchangeRate).toFixed(2)} $)`;
-    }
-    
-    // Afficher la monnaie rendue dans la devise appropriée
-    if (paymentCurrency === 'USD') {
-        document.getElementById('invoice-change').textContent = `${changeUSD.toFixed(2)} $ (${changeInHTG.toFixed(2)} Gdes)`;
-    } else {
-        document.getElementById('invoice-change').textContent = `${changeInHTG.toFixed(2)} Gdes (${changeUSD.toFixed(2)} $)`;
-    }
-    
-    document.getElementById('invoice-payment-method').textContent = `${selectedMethod} (${paymentCurrency})`;
-    document.getElementById('invoice-number').textContent = 'INV' + Date.now();
-    
-    // Ajouter le taux de change sur la facture
-    const exchangeRateDisplay = document.getElementById('invoice-exchange-rate');
-    if (exchangeRateDisplay) {
-        exchangeRateDisplay.textContent = `Taux: 1 $ = ${exchangeRate} Gdes`;
-    }
-    
-    // Mettre à jour la liste des services
-    let servicesHtml = '';
-    services.forEach(transaction => {
-        const transactionUSD = transaction.finalAmount / exchangeRate;
-        servicesHtml += `
-            <div class="receipt-item">
-                <span>${transaction.service}</span>
-                <span>${transaction.finalAmount.toFixed(2)} Gdes (${transactionUSD.toFixed(2)} $)</span>
-            </div>
-        `;
-    });
-    
-    document.getElementById('invoice-services-list').innerHTML = servicesHtml;
-    
-    // Afficher la facture
-    const container = document.getElementById('invoice-container');
-    container.classList.remove('hidden');
-    
-    // Configurer l'impression
-    setTimeout(() => {
-        const printContent = container.innerHTML;
-        const originalContent = document.body.innerHTML;
-        
-        document.body.innerHTML = printContent;
-        window.print();
-        document.body.innerHTML = originalContent;
-        
-        // Restaurer les écouteurs d'événements
-        setupCashier();
-        
-        container.classList.add('hidden');
-    }, 500);
 }
 
 // Fonction pour envoyer les notifications de paiement (si elle existe ailleurs)
