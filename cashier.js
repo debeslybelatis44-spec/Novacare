@@ -609,15 +609,98 @@ function setupCashier() {
         
         setTimeout(() => {
             const printContent = container.innerHTML;
-            const originalContent = document.body.innerHTML;
             
-            document.body.innerHTML = printContent;
-            window.print();
-            document.body.innerHTML = originalContent;
+            // Créer une iframe pour l'impression
+            const iframe = document.createElement('iframe');
+            iframe.style.position = 'absolute';
+            iframe.style.width = '0px';
+            iframe.style.height = '0px';
+            iframe.style.border = 'none';
+            iframe.style.left = '-1000px';
+            iframe.style.top = '-1000px';
             
-            setupCashier();
+            document.body.appendChild(iframe);
             
-            container.classList.add('hidden');
+            const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+            
+            // Écrire le contenu dans l'iframe
+            iframeDoc.open();
+            iframeDoc.write(`
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>Facture - ${patient.fullName}</title>
+                    <style>
+                        body { 
+                            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+                            margin: 20px; 
+                            color: #333;
+                        }
+                        .invoice-container { 
+                            width: 210mm; 
+                            margin: 0 auto; 
+                            padding: 20mm;
+                            background: white;
+                        }
+                        .invoice-header {
+                            text-align: center;
+                            margin-bottom: 30px;
+                            border-bottom: 2px solid #1a6bca;
+                            padding-bottom: 20px;
+                        }
+                        .invoice-logo {
+                            max-width: 150px;
+                            margin-bottom: 10px;
+                        }
+                        .invoice-body {
+                            margin: 30px 0;
+                        }
+                        .invoice-footer {
+                            margin-top: 40px;
+                            text-align: center;
+                            color: #666;
+                            font-size: 12px;
+                        }
+                        .receipt-item {
+                            display: flex;
+                            justify-content: space-between;
+                            padding: 8px 0;
+                            border-bottom: 1px dashed #ddd;
+                        }
+                        .total-section {
+                            background: #f0f7ff;
+                            padding: 15px;
+                            border-radius: 5px;
+                            margin-top: 20px;
+                            font-weight: bold;
+                        }
+                        @media print {
+                            body { margin: 0; }
+                            .invoice-container { 
+                                width: 100%; 
+                                padding: 10mm;
+                                box-shadow: none;
+                            }
+                        }
+                    </style>
+                </head>
+                <body>
+                    ${printContent}
+                </body>
+                </html>
+            `);
+            iframeDoc.close();
+            
+            // Imprimer depuis l'iframe
+            iframe.contentWindow.focus();
+            iframe.contentWindow.print();
+            
+            // Nettoyer après l'impression
+            setTimeout(() => {
+                document.body.removeChild(iframe);
+                container.classList.add('hidden');
+            }, 1000);
+            
         }, 500);
     }
     
@@ -635,7 +718,7 @@ function setupCashier() {
         }
         
         let historyHtml = `
-            <div class="print-receipt" style="width: 210mm; padding: 20mm; font-size: 14px;">
+            <div style="width: 210mm; padding: 20mm; font-size: 14px; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">
                 <div class="text-center">
                     <h3>HISTORIQUE COMPLET DES TRANSACTIONS</h3>
                     <p><strong>Patient:</strong> ${patient.fullName} (${patient.id})</p>
@@ -714,15 +797,52 @@ function setupCashier() {
             </div>
         `;
         
-        const printContainer = document.getElementById('print-container');
-        printContainer.innerHTML = historyHtml;
+        // Créer une iframe pour l'impression
+        const iframe = document.createElement('iframe');
+        iframe.style.position = 'absolute';
+        iframe.style.width = '0px';
+        iframe.style.height = '0px';
+        iframe.style.border = 'none';
+        iframe.style.left = '-1000px';
+        iframe.style.top = '-1000px';
         
-        const originalContent = document.body.innerHTML;
-        document.body.innerHTML = printContainer.innerHTML;
-        window.print();
-        document.body.innerHTML = originalContent;
+        document.body.appendChild(iframe);
         
-        setupCashier();
+        const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+        
+        // Écrire le contenu dans l'iframe
+        iframeDoc.open();
+        iframeDoc.write(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Historique des Transactions - ${patient.fullName}</title>
+                <style>
+                    body { 
+                        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+                        margin: 0;
+                        color: #333;
+                    }
+                    @media print {
+                        body { margin: 0; }
+                    }
+                </style>
+            </head>
+            <body>
+                ${historyHtml}
+            </body>
+            </html>
+        `);
+        iframeDoc.close();
+        
+        // Imprimer depuis l'iframe
+        iframe.contentWindow.focus();
+        iframe.contentWindow.print();
+        
+        // Nettoyer après l'impression
+        setTimeout(() => {
+            document.body.removeChild(iframe);
+        }, 1000);
     }
 }
 
