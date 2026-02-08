@@ -10,85 +10,71 @@ function setupPharmacy() {
     initializeLocationSelect();
     initializeDepartmentSelect();
     
-    document.getElementById('search-pharmacy-patient').addEventListener('click', () => {
-        const search = document.getElementById('pharmacy-patient-search').value.toLowerCase();
-        const patient = state.patients.find(p => 
-            p.id.toLowerCase() === search || 
+    // Recherche dynamique des patients
+    const searchInput = document.getElementById('pharmacy-patient-search');
+    const searchResults = document.getElementById('pharmacy-patient-results');
+    
+    // Créer le conteneur pour les résultats de recherche s'il n'existe pas
+    if (!searchResults) {
+        const resultsContainer = document.createElement('div');
+        resultsContainer.id = 'pharmacy-patient-results';
+        resultsContainer.className = 'search-results-dropdown';
+        searchInput.parentNode.insertBefore(resultsContainer, searchInput.nextSibling);
+    }
+    
+    // Recherche à chaque frappe
+    searchInput.addEventListener('input', () => {
+        const search = searchInput.value.trim().toLowerCase();
+        const resultsContainer = document.getElementById('pharmacy-patient-results');
+        
+        // Vider les résultats précédents
+        resultsContainer.innerHTML = '';
+        resultsContainer.style.display = 'none';
+        
+        if (search.length < 2) return;
+        
+        // Filtrer les patients
+        const matchedPatients = state.patients.filter(p => 
+            p.id.toLowerCase().includes(search) || 
             p.fullName.toLowerCase().includes(search)
         );
         
-        if (!patient) {
-            alert("Patient non trouvé!");
-            return;
-        }
-        
-        document.getElementById('pharmacy-patient-name').textContent = patient.fullName;
-        document.getElementById('pharmacy-patient-id').textContent = patient.id;
-        
-        const medTransactions = state.transactions.filter(t => 
-            t.patientId === patient.id && 
-            t.type === 'medication'
-        );
-        
-        const unpaidMeds = medTransactions.filter(t => t.status === 'unpaid');
-        const paidMeds = medTransactions.filter(t => t.status === 'paid');
-        
-        let statusText, statusClass;
-        if (unpaidMeds.length === 0 && paidMeds.length > 0) {
-            statusText = 'Tout payé';
-            statusClass = 'status-paid';
-        } else if (paidMeds.length > 0 && unpaidMeds.length > 0) {
-            statusText = 'Partiellement payé';
-            statusClass = 'status-partial';
-        } else if (unpaidMeds.length > 0) {
-            statusText = 'Non payé';
-            statusClass = 'status-unpaid';
-        } else {
-            statusText = 'Aucun médicament';
-            statusClass = '';
-        }
-        
-        document.getElementById('pharmacy-payment-status').textContent = statusText;
-        document.getElementById('pharmacy-payment-status').className = `patient-status-badge ${statusClass}`;
-        
-        let html = '';
-        medTransactions.forEach(transaction => {
-            const med = state.medicationStock.find(m => m.id === transaction.medicationId);
-            const canDeliver = transaction.status === 'paid' && 
-                              (!transaction.deliveryStatus || transaction.deliveryStatus !== 'delivered');
+        if (matchedPatients.length > 0) {
+            resultsContainer.style.display = 'block';
             
-            html += `
-                <div class="card mb-2">
-                    <div class="d-flex justify-between">
-                        <div>
-                            <h5>${transaction.service}</h5>
-                            <p>Posologie: ${transaction.dosage}</p>
-                            <p>Statut paiement: <span class="${transaction.status === 'paid' ? 'status-paid' : 'status-unpaid'}">${transaction.status === 'paid' ? 'Payé' : 'Non payé'}</span></p>
-                            <p>Livraison: <span class="${transaction.deliveryStatus === 'delivered' ? 'status-paid' : 'status-unpaid'}">${transaction.deliveryStatus || 'En attente'}</span></p>
-                        </div>
-                        <div>
-                            ${canDeliver ? `
-                                <button class="btn btn-success" onclick="deliverMedication('${transaction.id}')">
-                                    Délivrer
-                                </button>
-                            ` : ''}
-                            ${transaction.deliveryStatus === 'delivered' ? `
-                                <span class="text-success"><i class="fas fa-check"></i> Déjà délivré</span>
-                            ` : ''}
-                        </div>
+            matchedPatients.forEach(patient => {
+                const resultItem = document.createElement('div');
+                resultItem.className = 'search-result-item';
+                resultItem.innerHTML = `
+                    <div class="patient-search-info">
+                        <strong>${patient.fullName}</strong>
+                        <small>ID: ${patient.id}</small>
                     </div>
-                </div>
-            `;
-        });
-        
-        document.getElementById('pharmacy-prescriptions-list').innerHTML = html || '<p>Aucun médicament prescrit.</p>';
-        document.getElementById('pharmacy-patient-details').classList.remove('hidden');
-        
-        const hasDeliverable = medTransactions.some(t => 
-            t.status === 'paid' && 
-            (!t.deliveryStatus || t.deliveryStatus !== 'delivered')
-        );
-        document.getElementById('deliver-medications').disabled = !hasDeliverable;
+                `;
+                
+                resultItem.addEventListener('click', () => {
+                    searchInput.value = patient.id;
+                    resultsContainer.innerHTML = '';
+                    resultsContainer.style.display = 'none';
+                    displayPatientDetails(patient.id);
+                });
+                
+                resultsContainer.appendChild(resultItem);
+            });
+        }
+    });
+    
+    // Recherche avec le bouton
+    document.getElementById('search-pharmacy-patient').addEventListener('click', () => {
+        const search = document.getElementById('pharmacy-patient-search').value.trim();
+        displayPatientDetails(search);
+    });
+    
+    // Cacher les résultats quand on clique ailleurs
+    document.addEventListener('click', (e) => {
+        if (!searchInput.contains(e.target) && !searchResults.contains(e.target)) {
+            searchResults.style.display = 'none';
+        }
     });
     
     document.getElementById('add-new-medication').addEventListener('click', () => {
@@ -105,8 +91,92 @@ function setupPharmacy() {
     updateMedicationStock();
 }
 
+// Nouvelle fonction pour afficher les détails du patient
+function displayPatientDetails(search) {
+    const searchLower = search.toLowerCase();
+    const patient = state.patients.find(p => 
+        p.id.toLowerCase() === searchLower || 
+        p.fullName.toLowerCase().includes(searchLower)
+    );
+    
+    if (!patient) {
+        alert("Patient non trouvé!");
+        document.getElementById('pharmacy-patient-details').classList.add('hidden');
+        return;
+    }
+    
+    document.getElementById('pharmacy-patient-name').textContent = patient.fullName;
+    document.getElementById('pharmacy-patient-id').textContent = patient.id;
+    
+    const medTransactions = state.transactions.filter(t => 
+        t.patientId === patient.id && 
+        t.type === 'medication'
+    );
+    
+    const unpaidMeds = medTransactions.filter(t => t.status === 'unpaid');
+    const paidMeds = medTransactions.filter(t => t.status === 'paid');
+    
+    let statusText, statusClass;
+    if (unpaidMeds.length === 0 && paidMeds.length > 0) {
+        statusText = 'Tout payé';
+        statusClass = 'status-paid';
+    } else if (paidMeds.length > 0 && unpaidMeds.length > 0) {
+        statusText = 'Partiellement payé';
+        statusClass = 'status-partial';
+    } else if (unpaidMeds.length > 0) {
+        statusText = 'Non payé';
+        statusClass = 'status-unpaid';
+    } else {
+        statusText = 'Aucun médicament';
+        statusClass = '';
+    }
+    
+    document.getElementById('pharmacy-payment-status').textContent = statusText;
+    document.getElementById('pharmacy-payment-status').className = `patient-status-badge ${statusClass}`;
+    
+    let html = '';
+    medTransactions.forEach(transaction => {
+        const med = state.medicationStock.find(m => m.id === transaction.medicationId);
+        const canDeliver = transaction.status === 'paid' && 
+                          (!transaction.deliveryStatus || transaction.deliveryStatus !== 'delivered');
+        
+        html += `
+            <div class="card mb-2">
+                <div class="d-flex justify-between">
+                    <div>
+                        <h5>${transaction.service}</h5>
+                        <p>Posologie: ${transaction.dosage}</p>
+                        <p>Statut paiement: <span class="${transaction.status === 'paid' ? 'status-paid' : 'status-unpaid'}">${transaction.status === 'paid' ? 'Payé' : 'Non payé'}</span></p>
+                        <p>Livraison: <span class="${transaction.deliveryStatus === 'delivered' ? 'status-paid' : 'status-unpaid'}">${transaction.deliveryStatus || 'En attente'}</span></p>
+                    </div>
+                    <div>
+                        ${canDeliver ? `
+                            <button class="btn btn-success" onclick="deliverMedication('${transaction.id}')">
+                                Délivrer
+                            </button>
+                        ` : ''}
+                        ${transaction.deliveryStatus === 'delivered' ? `
+                            <span class="text-success"><i class="fas fa-check"></i> Déjà délivré</span>
+                        ` : ''}
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+    
+    document.getElementById('pharmacy-prescriptions-list').innerHTML = html || '<p>Aucun médicament prescrit.</p>';
+    document.getElementById('pharmacy-patient-details').classList.remove('hidden');
+    
+    const hasDeliverable = medTransactions.some(t => 
+        t.status === 'paid' && 
+        (!t.deliveryStatus || t.deliveryStatus !== 'delivered')
+    );
+    document.getElementById('deliver-medications').disabled = !hasDeliverable;
+}
+
 function initializeLocationSelect() {
     const select = document.getElementById('new-med-location');
+    select.innerHTML = '<option value="">Sélectionner un emplacement</option>';
     
     // Sections A: A1 à A20
     for (let i = 1; i <= 20; i++) {
@@ -126,6 +196,8 @@ function initializeLocationSelect() {
 
 function initializeDepartmentSelect() {
     const select = document.getElementById('new-med-department');
+    select.innerHTML = '<option value="">Sélectionner un département</option>';
+    
     const departments = [
         'Sérum',
         'Sérum mannitol',
@@ -165,7 +237,11 @@ function deliverMedication(transactionId) {
     transaction.deliveredBy = state.currentUser.username;
     
     alert("Médicament délivré avec succès!");
-    document.getElementById('search-pharmacy-patient').click();
+    // Recharger les informations du patient
+    const currentPatientId = document.getElementById('pharmacy-patient-id').textContent;
+    if (currentPatientId) {
+        displayPatientDetails(currentPatientId);
+    }
     updateMedicationStock();
 }
 
