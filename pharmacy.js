@@ -10,70 +10,13 @@ function setupPharmacy() {
     initializeLocationSelect();
     initializeDepartmentSelect();
     
-    // Recherche dynamique des patients
-    const searchInput = document.getElementById('pharmacy-patient-search');
-    const searchResults = document.getElementById('pharmacy-patient-results');
-    
-    // Créer le conteneur pour les résultats de recherche s'il n'existe pas
-    if (!searchResults) {
-        const resultsContainer = document.createElement('div');
-        resultsContainer.id = 'pharmacy-patient-results';
-        resultsContainer.className = 'search-results-dropdown';
-        searchInput.parentNode.insertBefore(resultsContainer, searchInput.nextSibling);
-    }
-    
-    // Recherche à chaque frappe
-    searchInput.addEventListener('input', () => {
-        const search = searchInput.value.trim().toLowerCase();
-        const resultsContainer = document.getElementById('pharmacy-patient-results');
-        
-        // Vider les résultats précédents
-        resultsContainer.innerHTML = '';
-        resultsContainer.style.display = 'none';
-        
-        if (search.length < 2) return;
-        
-        // Filtrer les patients
-        const matchedPatients = state.patients.filter(p => 
-            p.id.toLowerCase().includes(search) || 
-            p.fullName.toLowerCase().includes(search)
-        );
-        
-        if (matchedPatients.length > 0) {
-            resultsContainer.style.display = 'block';
-            
-            matchedPatients.forEach(patient => {
-                const resultItem = document.createElement('div');
-                resultItem.className = 'search-result-item';
-                resultItem.innerHTML = `
-                    <div class="patient-search-info">
-                        <strong>${patient.fullName}</strong>
-                        <small>ID: ${patient.id}</small>
-                    </div>
-                `;
-                
-                resultItem.addEventListener('click', () => {
-                    searchInput.value = patient.id;
-                    resultsContainer.innerHTML = '';
-                    resultsContainer.style.display = 'none';
-                    displayPatientDetails(patient.id);
-                });
-                
-                resultsContainer.appendChild(resultItem);
-            });
-        }
-    });
-    
     // Recherche avec le bouton
-    document.getElementById('search-pharmacy-patient').addEventListener('click', () => {
-        const search = document.getElementById('pharmacy-patient-search').value.trim();
-        displayPatientDetails(search);
-    });
+    document.getElementById('search-pharmacy-patient').addEventListener('click', searchPatient);
     
-    // Cacher les résultats quand on clique ailleurs
-    document.addEventListener('click', (e) => {
-        if (!searchInput.contains(e.target) && !searchResults.contains(e.target)) {
-            searchResults.style.display = 'none';
+    // Recherche avec la touche Entrée
+    document.getElementById('pharmacy-patient-search').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            searchPatient();
         }
     });
     
@@ -91,20 +34,35 @@ function setupPharmacy() {
     updateMedicationStock();
 }
 
-// Nouvelle fonction pour afficher les détails du patient
-function displayPatientDetails(search) {
-    const searchLower = search.toLowerCase();
-    const patient = state.patients.find(p => 
-        p.id.toLowerCase() === searchLower || 
-        p.fullName.toLowerCase().includes(searchLower)
-    );
+function searchPatient() {
+    const searchInput = document.getElementById('pharmacy-patient-search');
+    const searchValue = searchInput.value.trim();
+    
+    if (!searchValue) {
+        alert("Veuillez entrer un ID patient ou un nom pour la recherche!");
+        return;
+    }
+    
+    // Rechercher par ID exact d'abord
+    let patient = state.patients.find(p => p.id === searchValue);
+    
+    // Si non trouvé par ID exact, rechercher par nom
+    if (!patient) {
+        patient = state.patients.find(p => 
+            p.fullName.toLowerCase().includes(searchValue.toLowerCase())
+        );
+    }
     
     if (!patient) {
-        alert("Patient non trouvé!");
+        alert("Patient non trouvé! Vérifiez l'ID ou le nom.");
         document.getElementById('pharmacy-patient-details').classList.add('hidden');
         return;
     }
     
+    displayPatientDetails(patient);
+}
+
+function displayPatientDetails(patient) {
     document.getElementById('pharmacy-patient-name').textContent = patient.fullName;
     document.getElementById('pharmacy-patient-id').textContent = patient.id;
     
@@ -240,7 +198,10 @@ function deliverMedication(transactionId) {
     // Recharger les informations du patient
     const currentPatientId = document.getElementById('pharmacy-patient-id').textContent;
     if (currentPatientId) {
-        displayPatientDetails(currentPatientId);
+        const patient = state.patients.find(p => p.id === currentPatientId);
+        if (patient) {
+            displayPatientDetails(patient);
+        }
     }
     updateMedicationStock();
 }
