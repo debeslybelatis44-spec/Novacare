@@ -858,7 +858,6 @@ function loadDoctorAppointments() {
     html += '</tbody></table>';
     container.innerHTML = html;
 }
-
 function searchDoctorAppointment() {
     console.log("Fonction searchDoctorAppointment appelée");
     
@@ -883,6 +882,7 @@ function searchDoctorAppointment() {
         return;
     }
     
+    // CORRECTION: Filtrer par médecin connecté
     const doctorAppointments = state.appointments.filter(a => 
         a.doctor === state.currentUser.username &&
         (a.patientName.toLowerCase().includes(search) ||
@@ -892,6 +892,10 @@ function searchDoctorAppointment() {
     );
     
     console.log("Rendez-vous filtrés:", doctorAppointments);
+    
+}
+
+doctorAppointments);
     
     if (doctorAppointments.length === 0) {
         container.innerHTML = '<p>Aucun rendez-vous trouvé.</p>';

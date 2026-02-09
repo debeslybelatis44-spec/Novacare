@@ -502,7 +502,7 @@ function loadAppointmentsList() {
     container.innerHTML = html;
 }
 
-function searchDoctorAppointment() {
+function searchPatientAppointments() {  // Changé de searchDoctorAppointment()
     const patientId = document.getElementById('doctor-appointment-search').value.trim();
     const patient = state.patients.find(p => p.id === patientId);
     if (!patient) {
@@ -519,9 +519,9 @@ function searchDoctorAppointment() {
     }
     
     let html = '<h4>Rendez-vous du patient</h4>';
-    html += '<table class="table-container"><thead><tr><th>Date</th><th>Heure</th><th>Motif</th><th>Statut</th></tr></thead><tbody>';
+    html += '<table class="table-container"><thead><tr><th>Date</th><th>Heure</th><th>Motif</th><th>Médecin</th><th>Statut</th></tr></thead><tbody>';
     patientAppointments.forEach(app => {
-        html += `<tr><td>${app.date}</td><td>${app.time}</td><td>${app.reason}</td><td>${app.status}</td></tr>`;
+        html += `<tr><td>${app.date}</td><td>${app.time}</td><td>${app.reason}</td><td>${app.doctor}</td><td>${app.status}</td></tr>`;
     });
     html += '</tbody></table>';
     container.innerHTML = html;
