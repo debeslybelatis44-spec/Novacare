@@ -39,4 +39,13 @@ function initApp() {
     if (typeof setupPharmacy === 'function') {
         setupPharmacy();
     }
+    
+    // Si c'est un médecin, mettre à jour son tableau de bord avec les rendez-vous
+    if (state.currentRole === 'doctor') {
+        setTimeout(() => {
+            if (typeof updateDoctorAppointmentsDashboard === 'function') {
+                updateDoctorAppointmentsDashboard();
+            }
+        }, 500);
+    }
 }
