@@ -602,12 +602,12 @@ function setupDoctor() {
         alert("Consultation chargée pour modification. Modifiez les champs et enregistrez à nouveau.");
     });
     
-    // CORRECTION CRITIQUE : S'assurer que les événements sont correctement liés
+    // CORRECTION : Recherche de rendez-vous pour le médecin (ses propres rendez-vous)
     const searchBtn = document.getElementById('search-doctor-appointment');
     if (searchBtn) {
         searchBtn.addEventListener('click', function() {
-            console.log("Recherche de rendez-vous déclenchée");
-            searchDoctorAppointment();
+            console.log("Recherche de rendez-vous déclenchée (médecin)");
+            searchDoctorAppointments();
         });
     } else {
         console.error("Bouton de recherche de rendez-vous introuvable!");
@@ -801,7 +801,7 @@ function updateDoctorLabResults(patientId) {
     container.innerHTML = html;
 }
 
-// FONCTIONS CRITIQUES POUR LES RENDEZ-VOUS
+// FONCTIONS CRITIQUES POUR LES RENDEZ-VOUS (MÉDECIN)
 function loadDoctorAppointments() {
     const container = document.getElementById('doctor-appointment-results');
     if (!container) {
@@ -858,8 +858,9 @@ function loadDoctorAppointments() {
     html += '</tbody></table>';
     container.innerHTML = html;
 }
-function searchDoctorAppointment() {
-    console.log("Fonction searchDoctorAppointment appelée");
+
+function searchDoctorAppointments() {
+    console.log("Fonction searchDoctorAppointments appelée (médecin)");
     
     const searchInput = document.getElementById('doctor-appointment-search');
     const container = document.getElementById('doctor-appointment-results');
@@ -882,7 +883,7 @@ function searchDoctorAppointment() {
         return;
     }
     
-    // CORRECTION: Filtrer par médecin connecté
+    // CORRECTION : Filtrer par médecin connecté
     const doctorAppointments = state.appointments.filter(a => 
         a.doctor === state.currentUser.username &&
         (a.patientName.toLowerCase().includes(search) ||
@@ -892,10 +893,6 @@ function searchDoctorAppointment() {
     );
     
     console.log("Rendez-vous filtrés:", doctorAppointments);
-    
-}
-
-doctorAppointments);
     
     if (doctorAppointments.length === 0) {
         container.innerHTML = '<p>Aucun rendez-vous trouvé.</p>';

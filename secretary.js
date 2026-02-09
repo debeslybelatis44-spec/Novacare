@@ -428,7 +428,8 @@ function updateTodayPatientsList() {
 function setupAppointments() {
     document.getElementById('search-appointment-patient').addEventListener('click', searchAppointmentPatient);
     document.getElementById('schedule-appointment').addEventListener('click', scheduleAppointment);
-    document.getElementById('search-doctor-appointment').addEventListener('click', searchDoctorAppointment);
+    // CORRECTION : Utiliser une fonction différente pour éviter le conflit
+    document.getElementById('search-doctor-appointment').addEventListener('click', searchPatientAppointmentsForSecretary);
 }
 
 function searchAppointmentPatient() {
@@ -502,7 +503,8 @@ function loadAppointmentsList() {
     container.innerHTML = html;
 }
 
-function searchPatientAppointments() {  // Changé de searchDoctorAppointment()
+// CORRECTION : Renommée pour éviter le conflit avec medical.js
+function searchPatientAppointmentsForSecretary() {
     const patientId = document.getElementById('doctor-appointment-search').value.trim();
     const patient = state.patients.find(p => p.id === patientId);
     if (!patient) {
