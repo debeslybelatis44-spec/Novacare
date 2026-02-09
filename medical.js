@@ -138,6 +138,9 @@ function updateVitalsHistory(patientId) {
 let currentDoctorPatient = null;
 
 function setupDoctor() {
+    console.log("Initialisation du module médecin...");
+    
+    // Initialiser la recherche de patient
     document.getElementById('search-doctor-patient').addEventListener('click', () => {
         const search = document.getElementById('doctor-patient-search').value.toLowerCase();
         const patient = state.patients.find(p => 
@@ -599,25 +602,41 @@ function setupDoctor() {
         alert("Consultation chargée pour modification. Modifiez les champs et enregistrez à nouveau.");
     });
     
-    // CORRECTION : Initialisation de la recherche de rendez-vous
-    document.getElementById('search-doctor-appointment').addEventListener('click', searchDoctorAppointment);
+    // CORRECTION CRITIQUE : S'assurer que les événements sont correctement liés
+    const searchBtn = document.getElementById('search-doctor-appointment');
+    if (searchBtn) {
+        searchBtn.addEventListener('click', function() {
+            console.log("Recherche de rendez-vous déclenchée");
+            searchDoctorAppointment();
+        });
+    } else {
+        console.error("Bouton de recherche de rendez-vous introuvable!");
+    }
     
-    // CORRECTION : Charger les rendez-vous au chargement
-    loadDoctorAppointments();
+    // Charger les rendez-vous au chargement
+    setTimeout(() => {
+        loadDoctorAppointments();
+    }, 100);
+    
+    console.log("Module médecin initialisé avec succès");
 }
 
 function updateDoctorConsultationTypes() {
     const select = document.getElementById('doctor-consultation-type');
-    select.innerHTML = '<option value="">Sélectionner un type</option>';
-    state.consultationTypes.forEach(type => {
-        if (type.active) {
-            select.innerHTML += `<option value="${type.id}" data-price="${type.price}">${type.name} - ${type.price} Gdes</option>`;
-        }
-    });
+    if (select) {
+        select.innerHTML = '<option value="">Sélectionner un type</option>';
+        state.consultationTypes.forEach(type => {
+            if (type.active) {
+                select.innerHTML += `<option value="${type.id}" data-price="${type.price}">${type.name} - ${type.price} Gdes</option>`;
+            }
+        });
+    }
 }
 
 function updateCurrentVitalsDisplay(patientId) {
     const container = document.getElementById('current-vitals-display');
+    if (!container) return;
+    
     const patientVitals = state.vitals.filter(v => v.patientId === patientId);
     
     if (patientVitals.length === 0) {
@@ -647,6 +666,7 @@ function updateCurrentVitalsDisplay(patientId) {
 
 function updateLabAnalysesSelect() {
     const container = document.getElementById('lab-analyses-selection');
+    if (!container) return;
     
     const groupedAnalyses = {};
     state.labAnalysisTypes.forEach(analysis => {
@@ -682,6 +702,7 @@ function addMedicationToPrescription(medId) {
     if (!med) return;
     
     const tableBody = document.getElementById('prescription-medications-list');
+    if (!tableBody) return;
     
     const row = document.createElement('tr');
     row.innerHTML = `
@@ -694,8 +715,11 @@ function addMedicationToPrescription(medId) {
     
     tableBody.appendChild(row);
     
-    document.getElementById('medication-suggestions').classList.add('hidden');
-    document.getElementById('medication-search').value = '';
+    const suggestions = document.getElementById('medication-suggestions');
+    if (suggestions) suggestions.classList.add('hidden');
+    
+    const searchInput = document.getElementById('medication-search');
+    if (searchInput) searchInput.value = '';
     
     checkStockWarnings();
 }
@@ -707,14 +731,19 @@ function removeMedicationFromPrescription(button) {
 
 function checkStockWarnings() {
     const warnings = document.getElementById('stock-warnings');
+    if (!warnings) return;
+    
     const rows = document.querySelectorAll('#prescription-medications-list tr');
     
     let warningHtml = '';
     let hasWarning = false;
     
     rows.forEach(row => {
-        const medId = row.querySelector('.quantity-input').dataset.medId;
-        const quantity = parseInt(row.querySelector('.quantity-input').value);
+        const medId = row.querySelector('.quantity-input')?.dataset.medId;
+        const quantityInput = row.querySelector('.quantity-input');
+        if (!medId || !quantityInput) return;
+        
+        const quantity = parseInt(quantityInput.value);
         const med = state.medicationStock.find(m => m.id === medId);
         
         if (med) {
@@ -728,13 +757,16 @@ function checkStockWarnings() {
     });
     
     warnings.innerHTML = warningHtml;
-    if (document.getElementById('deliver-medications')) {
-        document.getElementById('deliver-medications').disabled = hasWarning;
+    const deliverBtn = document.getElementById('deliver-medications');
+    if (deliverBtn) {
+        deliverBtn.disabled = hasWarning;
     }
 }
 
 function updateDoctorLabResults(patientId) {
     const container = document.getElementById('doctor-lab-results');
+    if (!container) return;
+    
     const labTransactions = state.transactions.filter(t => 
         t.patientId === patientId && 
         t.type === 'lab' &&
@@ -769,14 +801,29 @@ function updateDoctorLabResults(patientId) {
     container.innerHTML = html;
 }
 
-// CORRECTION : Fonction pour charger les rendez-vous
+// FONCTIONS CRITIQUES POUR LES RENDEZ-VOUS
 function loadDoctorAppointments() {
     const container = document.getElementById('doctor-appointment-results');
+    if (!container) {
+        console.error("Container des rendez-vous introuvable!");
+        return;
+    }
+    
+    if (!state.currentUser || !state.currentUser.username) {
+        container.innerHTML = '<p>Utilisateur non connecté.</p>';
+        return;
+    }
+    
     const today = new Date().toISOString().split('T')[0];
+    console.log("Recherche des rendez-vous pour le médecin:", state.currentUser.username);
+    console.log("Tous les rendez-vous:", state.appointments);
+    
     const doctorAppointments = state.appointments.filter(a => 
         a.doctor === state.currentUser.username && 
         a.date >= today
     ).sort((a, b) => new Date(a.date + ' ' + a.time) - new Date(b.date + ' ' + b.time));
+    
+    console.log("Rendez-vous trouvés:", doctorAppointments);
     
     if (doctorAppointments.length === 0) {
         container.innerHTML = '<p>Aucun rendez-vous programmé.</p>';
@@ -812,13 +859,27 @@ function loadDoctorAppointments() {
     container.innerHTML = html;
 }
 
-// CORRECTION : Fonction pour rechercher des rendez-vous
 function searchDoctorAppointment() {
-    const search = document.getElementById('doctor-appointment-search').value.toLowerCase();
+    console.log("Fonction searchDoctorAppointment appelée");
+    
+    const searchInput = document.getElementById('doctor-appointment-search');
     const container = document.getElementById('doctor-appointment-results');
+    
+    if (!searchInput || !container) {
+        alert("Éléments de recherche introuvables!");
+        return;
+    }
+    
+    const search = searchInput.value.toLowerCase();
+    console.log("Terme de recherche:", search);
     
     if (!search) {
         loadDoctorAppointments();
+        return;
+    }
+    
+    if (!state.currentUser || !state.currentUser.username) {
+        container.innerHTML = '<p>Utilisateur non connecté.</p>';
         return;
     }
     
@@ -829,6 +890,8 @@ function searchDoctorAppointment() {
          a.reason.toLowerCase().includes(search) ||
          a.date.includes(search))
     );
+    
+    console.log("Rendez-vous filtrés:", doctorAppointments);
     
     if (doctorAppointments.length === 0) {
         container.innerHTML = '<p>Aucun rendez-vous trouvé.</p>';
@@ -1103,6 +1166,7 @@ function updatePendingAnalysesList() {
     );
     
     const container = document.getElementById('pending-analyses-list');
+    if (!container) return;
     
     if (pending.length === 0) {
         container.innerHTML = '<p>Aucune analyse en attente de résultats.</p>';
