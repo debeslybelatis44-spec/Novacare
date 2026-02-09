@@ -34,4 +34,9 @@ function initApp() {
     if (typeof setupMessaging === 'function') {
         setupMessaging();
     }
+    
+    // Initialiser la pharmacie si elle est disponible
+    if (typeof setupPharmacy === 'function') {
+        setupPharmacy();
+    }
 }

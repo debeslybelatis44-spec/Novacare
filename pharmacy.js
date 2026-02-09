@@ -10,16 +10,27 @@ function setupPharmacy() {
     initializeLocationSelect();
     initializeDepartmentSelect();
     
-    // Recherche avec le bouton
+    // Recherche de patient avec le bouton
     document.getElementById('search-pharmacy-patient').addEventListener('click', searchPatient);
     
-    // Recherche avec la touche Entrée
+    // Recherche de patient avec la touche Entrée
     document.getElementById('pharmacy-patient-search').addEventListener('keypress', (e) => {
         if (e.key === 'Enter') {
             searchPatient();
         }
     });
     
+    // Recherche de médicaments dans le stock
+    document.getElementById('search-medication').addEventListener('click', searchMedicationInStock);
+    
+    // Recherche de médicaments avec Entrée
+    document.getElementById('medication-search-stock').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            searchMedicationInStock();
+        }
+    });
+    
+    // Gestion du formulaire de nouveau médicament
     document.getElementById('add-new-medication').addEventListener('click', () => {
         document.getElementById('new-medication-form').style.display = 'block';
     });
@@ -31,6 +42,7 @@ function setupPharmacy() {
     
     document.getElementById('save-new-medication').addEventListener('click', addNewMedication);
     
+    // Initialiser l'affichage du stock
     updateMedicationStock();
 }
 
@@ -43,8 +55,8 @@ function searchPatient() {
         return;
     }
     
-    // Rechercher par ID exact d'abord
-    let patient = state.patients.find(p => p.id === searchValue);
+    // Rechercher par ID exact (insensible à la casse)
+    let patient = state.patients.find(p => p.id.toLowerCase() === searchValue.toLowerCase());
     
     // Si non trouvé par ID exact, rechercher par nom
     if (!patient) {
@@ -103,9 +115,10 @@ function displayPatientDetails(patient) {
                 <div class="d-flex justify-between">
                     <div>
                         <h5>${transaction.service}</h5>
-                        <p>Posologie: ${transaction.dosage}</p>
+                        <p>Posologie: ${transaction.dosage || 'Non spécifié'}</p>
                         <p>Statut paiement: <span class="${transaction.status === 'paid' ? 'status-paid' : 'status-unpaid'}">${transaction.status === 'paid' ? 'Payé' : 'Non payé'}</span></p>
                         <p>Livraison: <span class="${transaction.deliveryStatus === 'delivered' ? 'status-paid' : 'status-unpaid'}">${transaction.deliveryStatus || 'En attente'}</span></p>
+                        ${med ? `<p>Stock disponible: ${med.quantity} ${med.unit}</p>` : ''}
                     </div>
                     <div>
                         ${canDeliver ? `
@@ -130,6 +143,106 @@ function displayPatientDetails(patient) {
         (!t.deliveryStatus || t.deliveryStatus !== 'delivered')
     );
     document.getElementById('deliver-medications').disabled = !hasDeliverable;
+}
+
+function searchMedicationInStock() {
+    const searchInput = document.getElementById('medication-search-stock');
+    const searchValue = searchInput.value.trim().toLowerCase();
+    
+    if (!searchValue) {
+        // Si la recherche est vide, afficher tout le stock
+        updateMedicationStock();
+        return;
+    }
+    
+    const filteredMeds = state.medicationStock.filter(med => 
+        med.name.toLowerCase().includes(searchValue) ||
+        med.genericName.toLowerCase().includes(searchValue) ||
+        med.department.toLowerCase().includes(searchValue) ||
+        med.form.toLowerCase().includes(searchValue)
+    );
+    
+    displayFilteredMedications(filteredMeds);
+}
+
+function displayFilteredMedications(medications) {
+    const container = document.getElementById('medication-stock-list');
+    const today = new Date();
+    
+    let html = '';
+    
+    medications.forEach(med => {
+        let statusClass = '';
+        let statusText = 'Normal';
+        
+        // Vérifier l'expiration
+        if (med.expirationDate) {
+            const expDate = new Date(med.expirationDate);
+            const diffTime = expDate - today;
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            
+            if (diffDays <= 0) {
+                statusClass = 'expired';
+                statusText = 'EXPIRÉ';
+            } else if (diffDays <= 30) {
+                statusClass = 'expiring-soon';
+                statusText = 'Expire bientôt';
+            }
+        }
+        
+        // Vérifier le stock
+        if (med.quantity === 0) {
+            statusClass = 'out-of-stock';
+            statusText = 'Rupture';
+        } else if (med.quantity <= med.alertThreshold && statusClass === '') {
+            statusClass = 'low-stock';
+            statusText = 'Stock faible';
+        }
+        
+        // Formater la date d'expiration
+        let expirationDisplay = 'N/A';
+        if (med.expirationDate) {
+            const expDate = new Date(med.expirationDate);
+            expirationDisplay = expDate.toLocaleDateString('fr-FR');
+            
+            // Ajouter un avertissement si expiré ou bientôt expiré
+            const diffTime = expDate - today;
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            
+            if (diffDays <= 0) {
+                expirationDisplay += ' <span class="text-danger">(EXPIRÉ)</span>';
+            } else if (diffDays <= 30) {
+                expirationDisplay += ` <span class="text-warning">(dans ${diffDays} jours)</span>`;
+            }
+        }
+        
+        html += `
+            <tr class="${statusClass}">
+                <td>${med.name}<br><small>${med.genericName}</small></td>
+                <td>${med.form}</td>
+                <td>${med.department}</td>
+                <td>${med.quantity} ${med.unit}</td>
+                <td>${med.alertThreshold} ${med.unit}</td>
+                <td>${med.price.toFixed(2)} Gdes</td>
+                <td>${expirationDisplay}</td>
+                <td>${med.location}</td>
+                <td>${statusText}</td>
+                <td>
+                    <button class="btn btn-sm btn-warning" onclick="restockMedication('${med.id}')">
+                        Réapprovisionner
+                    </button>
+                    <button class="btn btn-sm btn-info" onclick="editMedication('${med.id}')">
+                        Modifier
+                    </button>
+                </td>
+            </tr>
+        `;
+    });
+    
+    container.innerHTML = html || '<tr><td colspan="10" class="text-center">Aucun médicament trouvé</td></tr>';
+    
+    updateLowStockMedications();
+    updateExpiringMedications();
 }
 
 function initializeLocationSelect() {
@@ -176,10 +289,16 @@ function initializeDepartmentSelect() {
 
 function deliverMedication(transactionId) {
     const transaction = state.transactions.find(t => t.id === transactionId);
-    if (!transaction) return;
+    if (!transaction) {
+        alert("Transaction non trouvée!");
+        return;
+    }
     
     const med = state.medicationStock.find(m => m.id === transaction.medicationId);
-    if (!med) return;
+    if (!med) {
+        alert("Médicament non trouvé dans le stock!");
+        return;
+    }
     
     if (med.quantity < transaction.quantity) {
         alert(`Stock insuffisant! Disponible: ${med.quantity} ${med.unit}, Demandé: ${transaction.quantity} ${med.unit}`);
@@ -195,6 +314,7 @@ function deliverMedication(transactionId) {
     transaction.deliveredBy = state.currentUser.username;
     
     alert("Médicament délivré avec succès!");
+    
     // Recharger les informations du patient
     const currentPatientId = document.getElementById('pharmacy-patient-id').textContent;
     if (currentPatientId) {
