@@ -10,6 +10,11 @@ function setupSecretary() {
     setupAppointments();
     setupMedicalCertificate();
     
+    // Charger les types de consultation pour le secrétariat
+    updateConsultationTypesSelect();
+    updateExternalServicesOptions();
+    updateExternalServicesSelect();
+    
     document.getElementById('patient-registration-form').addEventListener('submit', (e) => {
         e.preventDefault();
         
@@ -426,28 +431,65 @@ function updateTodayPatientsList() {
 }
 
 function setupAppointments() {
-    document.getElementById('search-appointment-patient').addEventListener('click', searchAppointmentPatient);
-    document.getElementById('schedule-appointment').addEventListener('click', scheduleAppointment);
-    // CORRECTION : Utiliser une fonction différente pour éviter le conflit
-    document.getElementById('search-doctor-appointment').addEventListener('click', searchPatientAppointmentsForSecretary);
+    // Initialiser les boutons de rendez-vous pour le secrétariat
+    const searchBtn = document.getElementById('search-appointment-patient');
+    if (searchBtn) {
+        searchBtn.addEventListener('click', searchAppointmentPatient);
+    }
+    
+    const scheduleBtn = document.getElementById('schedule-appointment');
+    if (scheduleBtn) {
+        scheduleBtn.addEventListener('click', scheduleAppointment);
+    }
+    
+    // Charger la liste des rendez-vous au démarrage
+    setTimeout(() => {
+        loadTodayAppointments();
+    }, 100);
 }
 
 function searchAppointmentPatient() {
     const patientId = document.getElementById('appointment-patient-search').value.trim();
     const patient = state.patients.find(p => p.id === patientId);
+    
     if (!patient) {
         alert("Patient non trouvé!");
         return;
     }
+    
+    // Afficher les détails du patient
     document.getElementById('appointment-patient-name').textContent = patient.fullName + ' (' + patient.id + ')';
     document.getElementById('appointment-patient-details').classList.remove('hidden');
+    
+    // Charger la liste des médecins
+    loadDoctorsForAppointments();
+    
+    // Afficher les rendez-vous existants de ce patient
+    const patientAppointments = state.appointments.filter(a => a.patientId === patientId);
+    const appointmentList = document.getElementById('patient-existing-appointments');
+    
+    if (patientAppointments.length === 0) {
+        appointmentList.innerHTML = '<p>Aucun rendez-vous existant.</p>';
+    } else {
+        let html = '<h5>Rendez-vous existants:</h5>';
+        html += '<ul>';
+        patientAppointments.forEach(app => {
+            const doctorUser = state.users.find(u => u.username === app.doctor);
+            const doctorName = doctorUser ? doctorUser.name : app.doctor;
+            html += `<li>${app.date} à ${app.time} avec Dr. ${doctorName} - ${app.reason}</li>`;
+        });
+        html += '</ul>';
+        appointmentList.innerHTML = html;
+    }
 }
 
 function loadDoctorsForAppointments() {
     const select = document.getElementById('appointment-doctor');
     select.innerHTML = '<option value="">Sélectionner un médecin</option>';
+    
     state.users.forEach(user => {
         if (user.role === 'doctor' && user.active) {
+            // Utiliser le username comme valeur
             select.innerHTML += `<option value="${user.username}">${user.name}</option>`;
         }
     });
@@ -456,75 +498,135 @@ function loadDoctorsForAppointments() {
 function scheduleAppointment() {
     const patientId = document.getElementById('appointment-patient-search').value.trim();
     const patient = state.patients.find(p => p.id === patientId);
+    
     if (!patient) {
         alert("Patient non trouvé!");
         return;
     }
+    
     const date = document.getElementById('appointment-date').value;
     const time = document.getElementById('appointment-time').value;
     const reason = document.getElementById('appointment-reason').value;
     const doctor = document.getElementById('appointment-doctor').value;
+    const doctorUser = state.users.find(u => u.username === doctor);
+    
+    if (!doctorUser) {
+        alert("Veuillez sélectionner un médecin valide!");
+        return;
+    }
 
     if (!date || !time) {
         alert("Veuillez remplir la date et l'heure!");
         return;
     }
 
+    // Vérifier si la date est dans le futur
+    const appointmentDate = new Date(date + ' ' + time);
+    const now = new Date();
+    
+    if (appointmentDate <= now) {
+        alert("La date du rendez-vous doit être dans le futur!");
+        return;
+    }
+
+    // Créer le rendez-vous
     const appointment = {
-        id: 'APP' + Date.now(),
+        id: 'APP' + Date.now().toString().slice(-8),
         patientId: patient.id,
         patientName: patient.fullName,
         date: date,
         time: time,
         reason: reason,
-        doctor: doctor,
+        doctor: doctor, // Stocker le username du médecin
+        doctorName: doctorUser.name, // Stocker aussi le nom affiché
         createdBy: state.currentUser.username,
+        createdAt: new Date().toISOString(),
         status: 'scheduled'
     };
 
     state.appointments.push(appointment);
+    
+    // Envoyer une notification au médecin
+    if (doctorUser) {
+        const message = {
+            id: 'MSG' + Date.now(),
+            sender: state.currentUser.username,
+            senderRole: state.currentRole,
+            recipient: doctorUser.username,
+            recipientRole: doctorUser.role,
+            subject: 'Nouveau rendez-vous programmé',
+            content: `Nouveau rendez-vous pour le patient ${patient.fullName} (${patient.id}) le ${date} à ${time}. Motif: ${reason}`,
+            timestamp: new Date().toISOString(),
+            read: false,
+            type: 'appointment_notification'
+        };
+        state.messages.push(message);
+        updateMessageBadge();
+    }
+    
     alert("Rendez-vous programmé avec succès!");
-    loadAppointmentsList();
+    
+    // Réinitialiser le formulaire
+    document.getElementById('appointment-patient-search').value = '';
+    document.getElementById('appointment-date').value = '';
+    document.getElementById('appointment-time').value = '';
+    document.getElementById('appointment-reason').value = '';
+    document.getElementById('appointment-doctor').selectedIndex = 0;
+    document.getElementById('appointment-patient-details').classList.add('hidden');
+    document.getElementById('patient-existing-appointments').innerHTML = '';
+    
+    // Recharger la liste des rendez-vous programmés
+    loadTodayAppointments();
 }
 
-function loadAppointmentsList() {
+function loadTodayAppointments() {
     const container = document.getElementById('appointments-list');
+    if (!container) return;
+    
     const today = new Date().toISOString().split('T')[0];
-    const upcoming = state.appointments.filter(a => a.date >= today).sort((a, b) => new Date(a.date + ' ' + a.time) - new Date(b.date + ' ' + b.time));
+    
+    // Pour le secrétaire, montrer tous les rendez-vous d'aujourd'hui et futurs
+    const upcoming = state.appointments.filter(a => a.date >= today)
+        .sort((a, b) => {
+            const dateA = new Date(a.date + ' ' + a.time);
+            const dateB = new Date(b.date + ' ' + b.time);
+            return dateA - dateB;
+        });
+    
     if (upcoming.length === 0) {
         container.innerHTML = '<p>Aucun rendez-vous à venir.</p>';
         return;
     }
+    
     let html = '<table class="table-container"><thead><tr><th>Patient</th><th>Date</th><th>Heure</th><th>Motif</th><th>Médecin</th><th>Statut</th></tr></thead><tbody>';
+    
     upcoming.forEach(app => {
-        html += `<tr><td>${app.patientName}</td><td>${app.date}</td><td>${app.time}</td><td>${app.reason}</td><td>${app.doctor}</td><td>${app.status}</td></tr>`;
+        const doctorUser = state.users.find(u => u.username === app.doctor);
+        const doctorDisplayName = doctorUser ? doctorUser.name : app.doctor;
+        
+        let statusBadge = '';
+        if (app.status === 'scheduled') {
+            statusBadge = '<span class="patient-status-badge status-upcoming">Programmé</span>';
+        } else if (app.status === 'completed') {
+            statusBadge = '<span class="patient-status-badge status-paid">Terminé</span>';
+        } else if (app.status === 'cancelled') {
+            statusBadge = '<span class="patient-status-badge status-unpaid">Annulé</span>';
+        } else {
+            statusBadge = `<span class="patient-status-badge">${app.status}</span>`;
+        }
+        
+        html += `
+            <tr>
+                <td>${app.patientName} (${app.patientId})</td>
+                <td>${app.date}</td>
+                <td>${app.time}</td>
+                <td>${app.reason}</td>
+                <td>${doctorDisplayName}</td>
+                <td>${statusBadge}</td>
+            </tr>
+        `;
     });
-    html += '</tbody></table>';
-    container.innerHTML = html;
-}
-
-// CORRECTION : Renommée pour éviter le conflit avec medical.js
-function searchPatientAppointmentsForSecretary() {
-    const patientId = document.getElementById('doctor-appointment-search').value.trim();
-    const patient = state.patients.find(p => p.id === patientId);
-    if (!patient) {
-        alert("Patient non trouvé!");
-        return;
-    }
     
-    const patientAppointments = state.appointments.filter(a => a.patientId === patientId);
-    const container = document.getElementById('doctor-appointment-results');
-    
-    if (patientAppointments.length === 0) {
-        container.innerHTML = '<p>Aucun rendez-vous trouvé pour ce patient.</p>';
-        return;
-    }
-    
-    let html = '<h4>Rendez-vous du patient</h4>';
-    html += '<table class="table-container"><thead><tr><th>Date</th><th>Heure</th><th>Motif</th><th>Médecin</th><th>Statut</th></tr></thead><tbody>';
-    patientAppointments.forEach(app => {
-        html += `<tr><td>${app.date}</td><td>${app.time}</td><td>${app.reason}</td><td>${app.doctor}</td><td>${app.status}</td></tr>`;
-    });
     html += '</tbody></table>';
     container.innerHTML = html;
 }

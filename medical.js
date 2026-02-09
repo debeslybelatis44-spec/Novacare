@@ -602,20 +602,20 @@ function setupDoctor() {
         alert("Consultation chargée pour modification. Modifiez les champs et enregistrez à nouveau.");
     });
     
-    // CORRECTION : Recherche de rendez-vous pour le médecin (ses propres rendez-vous)
-    const searchBtn = document.getElementById('search-doctor-appointment');
+    // Initialiser la recherche de rendez-vous pour le médecin
+    const searchBtn = document.getElementById('search-doctor-appointment-medical');
     if (searchBtn) {
         searchBtn.addEventListener('click', function() {
             console.log("Recherche de rendez-vous déclenchée (médecin)");
-            searchDoctorAppointments();
+            searchDoctorAppointmentsByPatient();
         });
     } else {
-        console.error("Bouton de recherche de rendez-vous introuvable!");
+        console.log("Bouton de recherche de rendez-vous médecin introuvable - peut-être pas sur cette page");
     }
     
     // Charger les rendez-vous au chargement
     setTimeout(() => {
-        loadDoctorAppointments();
+        loadAllDoctorAppointments();
     }, 100);
     
     console.log("Module médecin initialisé avec succès");
@@ -801,11 +801,13 @@ function updateDoctorLabResults(patientId) {
     container.innerHTML = html;
 }
 
-// FONCTIONS CRITIQUES POUR LES RENDEZ-VOUS (MÉDECIN)
-function loadDoctorAppointments() {
-    const container = document.getElementById('doctor-appointment-results');
+// ==================== FONCTIONS RENDEZ-VOUS MÉDECIN ====================
+
+// Fonction pour charger tous les rendez-vous du médecin
+function loadAllDoctorAppointments() {
+    const container = document.getElementById('doctor-appointment-results-medical');
     if (!container) {
-        console.error("Container des rendez-vous introuvable!");
+        console.error("Container des rendez-vous médecin introuvable!");
         return;
     }
     
@@ -859,22 +861,23 @@ function loadDoctorAppointments() {
     container.innerHTML = html;
 }
 
-function searchDoctorAppointments() {
-    console.log("Fonction searchDoctorAppointments appelée (médecin)");
+// Fonction pour rechercher les rendez-vous par patient (médecin)
+function searchDoctorAppointmentsByPatient() {
+    console.log("Fonction searchDoctorAppointmentsByPatient appelée (médecin)");
     
-    const searchInput = document.getElementById('doctor-appointment-search');
-    const container = document.getElementById('doctor-appointment-results');
+    const searchInput = document.getElementById('doctor-appointment-search-medical');
+    const container = document.getElementById('doctor-appointment-results-medical');
     
     if (!searchInput || !container) {
         alert("Éléments de recherche introuvables!");
         return;
     }
     
-    const search = searchInput.value.toLowerCase();
+    const search = searchInput.value.trim();
     console.log("Terme de recherche:", search);
     
     if (!search) {
-        loadDoctorAppointments();
+        loadAllDoctorAppointments();
         return;
     }
     
@@ -883,25 +886,37 @@ function searchDoctorAppointments() {
         return;
     }
     
-    // CORRECTION : Filtrer par médecin connecté
-    const doctorAppointments = state.appointments.filter(a => 
-        a.doctor === state.currentUser.username &&
-        (a.patientName.toLowerCase().includes(search) ||
-         a.patientId.toLowerCase().includes(search) ||
-         a.reason.toLowerCase().includes(search) ||
-         a.date.includes(search))
-    );
+    console.log("Médecin connecté:", state.currentUser.username);
+    console.log("Tous les rendez-vous:", state.appointments);
     
-    console.log("Rendez-vous filtrés:", doctorAppointments);
+    // Rechercher les rendez-vous de ce médecin pour ce patient
+    const doctorAppointments = state.appointments.filter(a => {
+        // D'abord, vérifier que c'est bien un rendez-vous pour ce médecin
+        const isForThisDoctor = a.doctor === state.currentUser.username;
+        
+        // Ensuite, vérifier si ça correspond à la recherche (par ID patient ou nom patient)
+        const matchesSearch = 
+            a.patientId.toLowerCase().includes(search.toLowerCase()) ||
+            a.patientName.toLowerCase().includes(search.toLowerCase());
+        
+        return isForThisDoctor && matchesSearch;
+    });
+    
+    console.log("Rendez-vous trouvés:", doctorAppointments);
     
     if (doctorAppointments.length === 0) {
-        container.innerHTML = '<p>Aucun rendez-vous trouvé.</p>';
+        container.innerHTML = '<p>Aucun rendez-vous trouvé pour ce patient.</p>';
         return;
     }
     
-    doctorAppointments.sort((a, b) => new Date(a.date + ' ' + a.time) - new Date(b.date + ' ' + b.time));
+    // Trier par date
+    doctorAppointments.sort((a, b) => {
+        const dateA = new Date(a.date + ' ' + a.time);
+        const dateB = new Date(b.date + ' ' + b.time);
+        return dateA - dateB;
+    });
     
-    let html = '<h4>Résultats de recherche</h4>';
+    let html = '<h4>Rendez-vous trouvés</h4>';
     html += '<table class="table-container"><thead><tr><th>Patient</th><th>Date</th><th>Heure</th><th>Motif</th><th>Statut</th></tr></thead><tbody>';
     
     doctorAppointments.forEach(app => {
