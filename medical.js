@@ -138,11 +138,9 @@ function updateVitalsHistory(patientId) {
 let currentDoctorPatient = null;
 
 function setupDoctor() {
-    // Initialiser l'affichage des rendez-vous dans le tableau de bord
-    if (state.currentRole === 'doctor') {
-        updateDoctorAppointmentsDashboard();
-    }
+    console.log("Initialisation du module médecin...");
     
+    // Initialiser la recherche de patient
     document.getElementById('search-doctor-patient').addEventListener('click', () => {
         const search = document.getElementById('doctor-patient-search').value.toLowerCase();
         const patient = state.patients.find(p => 
@@ -603,20 +601,42 @@ function setupDoctor() {
         
         alert("Consultation chargée pour modification. Modifiez les champs et enregistrez à nouveau.");
     });
+    
+    // Initialiser la recherche de rendez-vous pour le médecin
+    const searchBtn = document.getElementById('search-doctor-appointment-medical');
+    if (searchBtn) {
+        searchBtn.addEventListener('click', function() {
+            console.log("Recherche de rendez-vous déclenchée (médecin)");
+            searchDoctorAppointmentsByPatient();
+        });
+    } else {
+        console.log("Bouton de recherche de rendez-vous médecin introuvable - peut-être pas sur cette page");
+    }
+    
+    // Charger les rendez-vous au chargement
+    setTimeout(() => {
+        loadAllDoctorAppointments();
+    }, 100);
+    
+    console.log("Module médecin initialisé avec succès");
 }
 
 function updateDoctorConsultationTypes() {
     const select = document.getElementById('doctor-consultation-type');
-    select.innerHTML = '<option value="">Sélectionner un type</option>';
-    state.consultationTypes.forEach(type => {
-        if (type.active) {
-            select.innerHTML += `<option value="${type.id}" data-price="${type.price}">${type.name} - ${type.price} Gdes</option>`;
-        }
-    });
+    if (select) {
+        select.innerHTML = '<option value="">Sélectionner un type</option>';
+        state.consultationTypes.forEach(type => {
+            if (type.active) {
+                select.innerHTML += `<option value="${type.id}" data-price="${type.price}">${type.name} - ${type.price} Gdes</option>`;
+            }
+        });
+    }
 }
 
 function updateCurrentVitalsDisplay(patientId) {
     const container = document.getElementById('current-vitals-display');
+    if (!container) return;
+    
     const patientVitals = state.vitals.filter(v => v.patientId === patientId);
     
     if (patientVitals.length === 0) {
@@ -646,6 +666,7 @@ function updateCurrentVitalsDisplay(patientId) {
 
 function updateLabAnalysesSelect() {
     const container = document.getElementById('lab-analyses-selection');
+    if (!container) return;
     
     const groupedAnalyses = {};
     state.labAnalysisTypes.forEach(analysis => {
@@ -681,6 +702,7 @@ function addMedicationToPrescription(medId) {
     if (!med) return;
     
     const tableBody = document.getElementById('prescription-medications-list');
+    if (!tableBody) return;
     
     const row = document.createElement('tr');
     row.innerHTML = `
@@ -693,8 +715,11 @@ function addMedicationToPrescription(medId) {
     
     tableBody.appendChild(row);
     
-    document.getElementById('medication-suggestions').classList.add('hidden');
-    document.getElementById('medication-search').value = '';
+    const suggestions = document.getElementById('medication-suggestions');
+    if (suggestions) suggestions.classList.add('hidden');
+    
+    const searchInput = document.getElementById('medication-search');
+    if (searchInput) searchInput.value = '';
     
     checkStockWarnings();
 }
@@ -706,14 +731,19 @@ function removeMedicationFromPrescription(button) {
 
 function checkStockWarnings() {
     const warnings = document.getElementById('stock-warnings');
+    if (!warnings) return;
+    
     const rows = document.querySelectorAll('#prescription-medications-list tr');
     
     let warningHtml = '';
     let hasWarning = false;
     
     rows.forEach(row => {
-        const medId = row.querySelector('.quantity-input').dataset.medId;
-        const quantity = parseInt(row.querySelector('.quantity-input').value);
+        const medId = row.querySelector('.quantity-input')?.dataset.medId;
+        const quantityInput = row.querySelector('.quantity-input');
+        if (!medId || !quantityInput) return;
+        
+        const quantity = parseInt(quantityInput.value);
         const med = state.medicationStock.find(m => m.id === medId);
         
         if (med) {
@@ -727,13 +757,16 @@ function checkStockWarnings() {
     });
     
     warnings.innerHTML = warningHtml;
-    if (document.getElementById('deliver-medications')) {
-        document.getElementById('deliver-medications').disabled = hasWarning;
+    const deliverBtn = document.getElementById('deliver-medications');
+    if (deliverBtn) {
+        deliverBtn.disabled = hasWarning;
     }
 }
 
 function updateDoctorLabResults(patientId) {
     const container = document.getElementById('doctor-lab-results');
+    if (!container) return;
+    
     const labTransactions = state.transactions.filter(t => 
         t.patientId === patientId && 
         t.type === 'lab' &&
@@ -768,99 +801,150 @@ function updateDoctorLabResults(patientId) {
     container.innerHTML = html;
 }
 
-// ==================== AFFICHAGE RENDEZ-VOUS MÉDECIN (TABLEAU DE BORD) ====================
-function updateDoctorAppointmentsDashboard() {
-    // Cette fonction met à jour le tableau de bord du médecin avec ses rendez-vous
+// ==================== FONCTIONS RENDEZ-VOUS MÉDECIN ====================
+
+// Fonction pour charger tous les rendez-vous du médecin
+function loadAllDoctorAppointments() {
+    const container = document.getElementById('doctor-appointment-results-medical');
+    if (!container) {
+        console.error("Container des rendez-vous médecin introuvable!");
+        return;
+    }
+    
+    if (!state.currentUser || !state.currentUser.username) {
+        container.innerHTML = '<p>Utilisateur non connecté.</p>';
+        return;
+    }
+    
     const today = new Date().toISOString().split('T')[0];
+    console.log("Recherche des rendez-vous pour le médecin:", state.currentUser.username);
+    console.log("Tous les rendez-vous:", state.appointments);
+    
     const doctorAppointments = state.appointments.filter(a => 
         a.doctor === state.currentUser.username && 
-        a.date >= today &&
-        a.status === 'scheduled'
-    ).sort((a, b) => {
+        a.date >= today
+    ).sort((a, b) => new Date(a.date + ' ' + a.time) - new Date(b.date + ' ' + b.time));
+    
+    console.log("Rendez-vous trouvés:", doctorAppointments);
+    
+    if (doctorAppointments.length === 0) {
+        container.innerHTML = '<p>Aucun rendez-vous programmé.</p>';
+        return;
+    }
+    
+    let html = '<h4>Vos rendez-vous à venir</h4>';
+    html += '<table class="table-container"><thead><tr><th>Patient</th><th>Date</th><th>Heure</th><th>Motif</th><th>Statut</th></tr></thead><tbody>';
+    
+    doctorAppointments.forEach(app => {
+        const appDate = new Date(app.date);
+        const todayDate = new Date();
+        let status = 'À venir';
+        let statusClass = 'status-upcoming';
+        
+        if (appDate.toDateString() === todayDate.toDateString()) {
+            status = 'Aujourd\'hui';
+            statusClass = 'status-today';
+        }
+        
+        html += `
+            <tr>
+                <td>${app.patientName} (${app.patientId})</td>
+                <td>${app.date}</td>
+                <td>${app.time}</td>
+                <td>${app.reason}</td>
+                <td><span class="patient-status-badge ${statusClass}">${status}</span></td>
+            </tr>
+        `;
+    });
+    
+    html += '</tbody></table>';
+    container.innerHTML = html;
+}
+
+// Fonction pour rechercher les rendez-vous par patient (médecin)
+function searchDoctorAppointmentsByPatient() {
+    console.log("Fonction searchDoctorAppointmentsByPatient appelée (médecin)");
+    
+    const searchInput = document.getElementById('doctor-appointment-search-medical');
+    const container = document.getElementById('doctor-appointment-results-medical');
+    
+    if (!searchInput || !container) {
+        alert("Éléments de recherche introuvables!");
+        return;
+    }
+    
+    const search = searchInput.value.trim();
+    console.log("Terme de recherche:", search);
+    
+    if (!search) {
+        loadAllDoctorAppointments();
+        return;
+    }
+    
+    if (!state.currentUser || !state.currentUser.username) {
+        container.innerHTML = '<p>Utilisateur non connecté.</p>';
+        return;
+    }
+    
+    console.log("Médecin connecté:", state.currentUser.username);
+    console.log("Tous les rendez-vous:", state.appointments);
+    
+    // Rechercher les rendez-vous de ce médecin pour ce patient
+    const doctorAppointments = state.appointments.filter(a => {
+        // D'abord, vérifier que c'est bien un rendez-vous pour ce médecin
+        const isForThisDoctor = a.doctor === state.currentUser.username;
+        
+        // Ensuite, vérifier si ça correspond à la recherche (par ID patient ou nom patient)
+        const matchesSearch = 
+            a.patientId.toLowerCase().includes(search.toLowerCase()) ||
+            a.patientName.toLowerCase().includes(search.toLowerCase());
+        
+        return isForThisDoctor && matchesSearch;
+    });
+    
+    console.log("Rendez-vous trouvés:", doctorAppointments);
+    
+    if (doctorAppointments.length === 0) {
+        container.innerHTML = '<p>Aucun rendez-vous trouvé pour ce patient.</p>';
+        return;
+    }
+    
+    // Trier par date
+    doctorAppointments.sort((a, b) => {
         const dateA = new Date(a.date + ' ' + a.time);
         const dateB = new Date(b.date + ' ' + b.time);
         return dateA - dateB;
     });
     
-    const container = document.getElementById('role-dashboard-content');
-    if (!container) return;
+    let html = '<h4>Rendez-vous trouvés</h4>';
+    html += '<table class="table-container"><thead><tr><th>Patient</th><th>Date</th><th>Heure</th><th>Motif</th><th>Statut</th></tr></thead><tbody>';
     
-    let html = `
-        <div class="card">
-            <h3><i class="fas fa-calendar-alt"></i> Mes Rendez-vous à venir</h3>
-    `;
-    
-    if (doctorAppointments.length === 0) {
-        html += '<p>Aucun rendez-vous programmé.</p>';
-    } else {
-        html += '<div class="table-container">';
-        html += '<table><thead><tr><th>Patient</th><th>Date</th><th>Heure</th><th>Motif</th></tr></thead><tbody>';
+    doctorAppointments.forEach(app => {
+        const today = new Date();
+        const appDate = new Date(app.date);
+        let status = 'À venir';
+        let statusClass = 'status-upcoming';
         
-        doctorAppointments.forEach(app => {
-            html += `
-                <tr>
-                    <td>${app.patientName} (${app.patientId})</td>
-                    <td>${app.date}</td>
-                    <td>${app.time}</td>
-                    <td>${app.reason}</td>
-                </tr>
-            `;
-        });
-        
-        html += '</tbody></table>';
-        html += '</div>';
-        
-        // Afficher le prochain rendez-vous aujourd'hui
-        const todayAppointments = doctorAppointments.filter(a => a.date === today);
-        if (todayAppointments.length > 0) {
-            const nextAppointment = todayAppointments[0];
-            html += `
-                <div class="alert alert-info mt-3">
-                    <h5><i class="fas fa-bell"></i> Prochain rendez-vous aujourd'hui</h5>
-                    <p><strong>Patient:</strong> ${nextAppointment.patientName} (${nextAppointment.patientId})</p>
-                    <p><strong>Heure:</strong> ${nextAppointment.time}</p>
-                    <p><strong>Motif:</strong> ${nextAppointment.reason}</p>
-                </div>
-            `;
+        if (appDate < today) {
+            status = 'Passé';
+            statusClass = 'status-past';
+        } else if (appDate.toDateString() === today.toDateString()) {
+            status = 'Aujourd\'hui';
+            statusClass = 'status-today';
         }
-    }
+        
+        html += `
+            <tr>
+                <td>${app.patientName} (${app.patientId})</td>
+                <td>${app.date}</td>
+                <td>${app.time}</td>
+                <td>${app.reason}</td>
+                <td><span class="patient-status-badge ${statusClass}">${status}</span></td>
+            </tr>
+        `;
+    });
     
-    html += `
-        </div>
-        <div class="card mt-3">
-            <h3><i class="fas fa-chart-line"></i> Statistiques</h3>
-            <div class="stats-container">
-                <div class="stat-card">
-                    <div class="stat-icon" style="background-color:#1a6bca;">
-                        <i class="fas fa-calendar-check"></i>
-                    </div>
-                    <div class="stat-info">
-                        <h3>${doctorAppointments.length}</h3>
-                        <p>Rendez-vous à venir</p>
-                    </div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-icon" style="background-color:#28a745;">
-                        <i class="fas fa-user-md"></i>
-                    </div>
-                    <div class="stat-info">
-                        <h3>${state.consultations.filter(c => c.doctor === state.currentUser.username).length}</h3>
-                        <p>Consultations</p>
-                    </div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-icon" style="background-color:#ffc107;">
-                        <i class="fas fa-file-prescription"></i>
-                    </div>
-                    <div class="stat-info">
-                        <h3>${state.transactions.filter(t => t.createdBy === state.currentUser.username && t.type === 'medication').length}</h3>
-                        <p>Ordonnances</p>
-                    </div>
-                </div>
-            </div>
-        </div>
-    `;
-    
+    html += '</tbody></table>';
     container.innerHTML = html;
 }
 
@@ -1098,6 +1182,7 @@ function updatePendingAnalysesList() {
     );
     
     const container = document.getElementById('pending-analyses-list');
+    if (!container) return;
     
     if (pending.length === 0) {
         container.innerHTML = '<p>Aucune analyse en attente de résultats.</p>';

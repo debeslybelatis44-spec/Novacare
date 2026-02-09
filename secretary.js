@@ -1,8 +1,7 @@
-// Module Secrétariat - Gestion complète des rendez-vous
+// Module Secrétariat
 document.addEventListener('DOMContentLoaded', () => {
     if (document.getElementById('patient-registration-form')) {
         setupSecretary();
-        loadTodayAppointments(); // Charger les rendez-vous au démarrage
     }
 });
 
@@ -431,7 +430,6 @@ function updateTodayPatientsList() {
     container.innerHTML = html;
 }
 
-// ==================== GESTION DES RENDEZ-VOUS (SECRÉTAIRE SEULEMENT) ====================
 function setupAppointments() {
     // Initialiser les boutons de rendez-vous pour le secrétariat
     const searchBtn = document.getElementById('search-appointment-patient');
@@ -446,7 +444,7 @@ function setupAppointments() {
     
     // Charger la liste des rendez-vous au démarrage
     setTimeout(() => {
-        loadAllAppointments();
+        loadTodayAppointments();
     }, 100);
 }
 
@@ -468,41 +466,19 @@ function searchAppointmentPatient() {
     
     // Afficher les rendez-vous existants de ce patient
     const patientAppointments = state.appointments.filter(a => a.patientId === patientId);
-    const appointmentList = document.getElementById('appointments-list');
+    const appointmentList = document.getElementById('patient-existing-appointments');
     
     if (patientAppointments.length === 0) {
         appointmentList.innerHTML = '<p>Aucun rendez-vous existant.</p>';
     } else {
         let html = '<h5>Rendez-vous existants:</h5>';
-        html += '<table class="table-container"><thead><tr><th>Date</th><th>Heure</th><th>Médecin</th><th>Motif</th><th>Statut</th><th>Actions</th></tr></thead><tbody>';
+        html += '<ul>';
         patientAppointments.forEach(app => {
             const doctorUser = state.users.find(u => u.username === app.doctor);
             const doctorName = doctorUser ? doctorUser.name : app.doctor;
-            
-            let statusBadge = '';
-            if (app.status === 'scheduled') {
-                statusBadge = '<span class="appointment-status status-pending">Programmé</span>';
-            } else if (app.status === 'completed') {
-                statusBadge = '<span class="appointment-status status-completed">Terminé</span>';
-            } else if (app.status === 'cancelled') {
-                statusBadge = '<span class="appointment-status status-cancelled">Annulé</span>';
-            }
-            
-            html += `
-                <tr>
-                    <td>${app.date}</td>
-                    <td>${app.time}</td>
-                    <td>${doctorName}</td>
-                    <td>${app.reason}</td>
-                    <td>${statusBadge}</td>
-                    <td>
-                        <button class="btn btn-sm btn-warning" onclick="editAppointment('${app.id}')">Modifier</button>
-                        <button class="btn btn-sm btn-danger" onclick="cancelAppointment('${app.id}')">Annuler</button>
-                    </td>
-                </tr>
-            `;
+            html += `<li>${app.date} à ${app.time} avec Dr. ${doctorName} - ${app.reason}</li>`;
         });
-        html += '</tbody></table>';
+        html += '</ul>';
         appointmentList.innerHTML = html;
     }
 }
@@ -553,19 +529,6 @@ function scheduleAppointment() {
         return;
     }
 
-    // Vérifier si le médecin a déjà un rendez-vous à cette heure
-    const existingAppointment = state.appointments.find(a => 
-        a.doctor === doctor && 
-        a.date === date && 
-        a.time === time &&
-        a.status !== 'cancelled'
-    );
-    
-    if (existingAppointment) {
-        alert("Le médecin a déjà un rendez-vous à cette heure!");
-        return;
-    }
-
     // Créer le rendez-vous
     const appointment = {
         id: 'APP' + Date.now().toString().slice(-8),
@@ -610,35 +573,34 @@ function scheduleAppointment() {
     document.getElementById('appointment-reason').value = '';
     document.getElementById('appointment-doctor').selectedIndex = 0;
     document.getElementById('appointment-patient-details').classList.add('hidden');
+    document.getElementById('patient-existing-appointments').innerHTML = '';
     
-    // Recharger la liste des rendez-vous
-    loadAllAppointments();
-    searchAppointmentPatient(); // Recharger pour ce patient
+    // Recharger la liste des rendez-vous programmés
+    loadTodayAppointments();
 }
 
-function loadAllAppointments() {
+function loadTodayAppointments() {
     const container = document.getElementById('appointments-list');
     if (!container) return;
     
     const today = new Date().toISOString().split('T')[0];
     
-    // Pour le secrétaire, montrer tous les rendez-vous
-    const allAppointments = state.appointments
+    // Pour le secrétaire, montrer tous les rendez-vous d'aujourd'hui et futurs
+    const upcoming = state.appointments.filter(a => a.date >= today)
         .sort((a, b) => {
             const dateA = new Date(a.date + ' ' + a.time);
             const dateB = new Date(b.date + ' ' + b.time);
             return dateA - dateB;
         });
     
-    if (allAppointments.length === 0) {
-        container.innerHTML = '<p>Aucun rendez-vous programmé.</p>';
+    if (upcoming.length === 0) {
+        container.innerHTML = '<p>Aucun rendez-vous à venir.</p>';
         return;
     }
     
-    let html = '<h4>Tous les rendez-vous</h4>';
-    html += '<table class="table-container"><thead><tr><th>Patient</th><th>Date</th><th>Heure</th><th>Motif</th><th>Médecin</th><th>Statut</th><th>Actions</th></tr></thead><tbody>';
+    let html = '<table class="table-container"><thead><tr><th>Patient</th><th>Date</th><th>Heure</th><th>Motif</th><th>Médecin</th><th>Statut</th></tr></thead><tbody>';
     
-    allAppointments.forEach(app => {
+    upcoming.forEach(app => {
         const doctorUser = state.users.find(u => u.username === app.doctor);
         const doctorDisplayName = doctorUser ? doctorUser.name : app.doctor;
         
@@ -661,15 +623,6 @@ function loadAllAppointments() {
                 <td>${app.reason}</td>
                 <td>${doctorDisplayName}</td>
                 <td>${statusBadge}</td>
-                <td>
-                    ${app.status === 'scheduled' ? `
-                        <button class="btn btn-sm btn-warning" onclick="editAppointment('${app.id}')">Modifier</button>
-                        <button class="btn btn-sm btn-danger" onclick="cancelAppointment('${app.id}')">Annuler</button>
-                    ` : ''}
-                    ${app.status === 'cancelled' ? `
-                        <button class="btn btn-sm btn-success" onclick="reactivateAppointment('${app.id}')">Réactiver</button>
-                    ` : ''}
-                </td>
             </tr>
         `;
     });
@@ -678,171 +631,6 @@ function loadAllAppointments() {
     container.innerHTML = html;
 }
 
-function editAppointment(appointmentId) {
-    const appointment = state.appointments.find(a => a.id === appointmentId);
-    if (!appointment) return;
-    
-    // Pré-remplir le formulaire avec les données du rendez-vous
-    document.getElementById('appointment-patient-search').value = appointment.patientId;
-    searchAppointmentPatient(); // Cela va charger les détails
-    
-    // Après un court délai, pré-remplir les autres champs
-    setTimeout(() => {
-        document.getElementById('appointment-date').value = appointment.date;
-        document.getElementById('appointment-time').value = appointment.time;
-        document.getElementById('appointment-reason').value = appointment.reason;
-        document.getElementById('appointment-doctor').value = appointment.doctor;
-        
-        // Changer le bouton pour "Modifier" au lieu de "Programmer"
-        const scheduleBtn = document.getElementById('schedule-appointment');
-        scheduleBtn.innerHTML = '<i class="fas fa-edit"></i> Modifier le rendez-vous';
-        scheduleBtn.onclick = function() { updateAppointment(appointmentId); };
-        
-        // Ajouter un bouton Annuler modification
-        if (!document.getElementById('cancel-edit-btn')) {
-            const cancelBtn = document.createElement('button');
-            cancelBtn.id = 'cancel-edit-btn';
-            cancelBtn.className = 'btn btn-secondary mt-2';
-            cancelBtn.innerHTML = '<i class="fas fa-times"></i> Annuler modification';
-            cancelBtn.onclick = function() {
-                resetAppointmentForm();
-                this.remove();
-            };
-            document.getElementById('appointment-patient-details').appendChild(cancelBtn);
-        }
-    }, 300);
-}
-
-function updateAppointment(appointmentId) {
-    const appointment = state.appointments.find(a => a.id === appointmentId);
-    if (!appointment) return;
-    
-    const date = document.getElementById('appointment-date').value;
-    const time = document.getElementById('appointment-time').value;
-    const reason = document.getElementById('appointment-reason').value;
-    const doctor = document.getElementById('appointment-doctor').value;
-    const doctorUser = state.users.find(u => u.username === doctor);
-    
-    if (!doctorUser || !date || !time) {
-        alert("Veuillez remplir tous les champs!");
-        return;
-    }
-
-    // Vérifier les conflits (sauf avec lui-même)
-    const existingAppointment = state.appointments.find(a => 
-        a.id !== appointmentId &&
-        a.doctor === doctor && 
-        a.date === date && 
-        a.time === time &&
-        a.status !== 'cancelled'
-    );
-    
-    if (existingAppointment) {
-        alert("Le médecin a déjà un rendez-vous à cette heure!");
-        return;
-    }
-
-    // Mettre à jour le rendez-vous
-    appointment.date = date;
-    appointment.time = time;
-    appointment.reason = reason;
-    appointment.doctor = doctor;
-    appointment.doctorName = doctorUser.name;
-    appointment.modifiedBy = state.currentUser.username;
-    appointment.modifiedAt = new Date().toISOString();
-    
-    // Envoyer une notification au médecin
-    const message = {
-        id: 'MSG' + Date.now(),
-        sender: state.currentUser.username,
-        senderRole: state.currentRole,
-        recipient: doctorUser.username,
-        recipientRole: doctorUser.role,
-        subject: 'Rendez-vous modifié',
-        content: `Rendez-vous modifié pour le patient ${appointment.patientName} (${appointment.patientId}). Nouvelle date: ${date} à ${time}. Motif: ${reason}`,
-        timestamp: new Date().toISOString(),
-        read: false,
-        type: 'appointment_update'
-    };
-    state.messages.push(message);
-    updateMessageBadge();
-    
-    alert("Rendez-vous modifié avec succès!");
-    resetAppointmentForm();
-    loadAllAppointments();
-}
-
-function cancelAppointment(appointmentId) {
-    if (!confirm("Voulez-vous vraiment annuler ce rendez-vous?")) return;
-    
-    const appointment = state.appointments.find(a => a.id === appointmentId);
-    if (!appointment) return;
-    
-    appointment.status = 'cancelled';
-    appointment.cancelledBy = state.currentUser.username;
-    appointment.cancelledAt = new Date().toISOString();
-    
-    // Envoyer une notification au médecin
-    const doctorUser = state.users.find(u => u.username === appointment.doctor);
-    if (doctorUser) {
-        const message = {
-            id: 'MSG' + Date.now(),
-            sender: state.currentUser.username,
-            senderRole: state.currentRole,
-            recipient: doctorUser.username,
-            recipientRole: doctorUser.role,
-            subject: 'Rendez-vous annulé',
-            content: `Rendez-vous annulé pour le patient ${appointment.patientName} (${appointment.patientId}) prévu le ${appointment.date} à ${appointment.time}`,
-            timestamp: new Date().toISOString(),
-            read: false,
-            type: 'appointment_cancellation'
-        };
-        state.messages.push(message);
-        updateMessageBadge();
-    }
-    
-    alert("Rendez-vous annulé!");
-    loadAllAppointments();
-}
-
-function reactivateAppointment(appointmentId) {
-    const appointment = state.appointments.find(a => a.id === appointmentId);
-    if (!appointment) return;
-    
-    // Vérifier si la date est toujours dans le futur
-    const appointmentDate = new Date(appointment.date + ' ' + appointment.time);
-    const now = new Date();
-    
-    if (appointmentDate <= now) {
-        alert("Impossible de réactiver un rendez-vous passé!");
-        return;
-    }
-    
-    appointment.status = 'scheduled';
-    appointment.reactivatedBy = state.currentUser.username;
-    appointment.reactivatedAt = new Date().toISOString();
-    
-    alert("Rendez-vous réactivé!");
-    loadAllAppointments();
-}
-
-function resetAppointmentForm() {
-    const scheduleBtn = document.getElementById('schedule-appointment');
-    scheduleBtn.innerHTML = '<i class="fas fa-calendar-plus"></i> Programmer le rendez-vous';
-    scheduleBtn.onclick = scheduleAppointment;
-    
-    document.getElementById('appointment-patient-search').value = '';
-    document.getElementById('appointment-date').value = '';
-    document.getElementById('appointment-time').value = '';
-    document.getElementById('appointment-reason').value = '';
-    document.getElementById('appointment-doctor').selectedIndex = 0;
-    document.getElementById('appointment-patient-details').classList.add('hidden');
-    
-    const cancelBtn = document.getElementById('cancel-edit-btn');
-    if (cancelBtn) cancelBtn.remove();
-}
-
-// ==================== CERTIFICAT MÉDICAL ====================
 function setupMedicalCertificate() {
     document.getElementById('generate-medical-certificate').addEventListener('click', function() {
         const patientId = this.dataset.patientId;
