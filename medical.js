@@ -602,7 +602,7 @@ function setupDoctor() {
     // CORRECTION : Initialisation de la recherche de rendez-vous
     document.getElementById('search-doctor-appointment').addEventListener('click', searchDoctorAppointment);
     
-    // Charger les rendez-vous au chargement
+    // CORRECTION : Charger les rendez-vous au chargement
     loadDoctorAppointments();
 }
 
@@ -769,7 +769,7 @@ function updateDoctorLabResults(patientId) {
     container.innerHTML = html;
 }
 
-// CORRECTION : Ajout des fonctions manquantes pour la gestion des rendez-vous
+// CORRECTION : Fonction pour charger les rendez-vous
 function loadDoctorAppointments() {
     const container = document.getElementById('doctor-appointment-results');
     const today = new Date().toISOString().split('T')[0];
@@ -812,6 +812,7 @@ function loadDoctorAppointments() {
     container.innerHTML = html;
 }
 
+// CORRECTION : Fonction pour rechercher des rendez-vous
 function searchDoctorAppointment() {
     const search = document.getElementById('doctor-appointment-search').value.toLowerCase();
     const container = document.getElementById('doctor-appointment-results');
