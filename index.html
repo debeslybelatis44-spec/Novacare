@@ -86,6 +86,7 @@
                 <div id="role-dashboard-content"></div>
             </section>
             
+            <!-- SECTION SECRÉTARIAT COMPLÈTE -->
             <section id="secretary" class="content">
                 <h2 class="section-title">Secrétariat</h2>
                 
@@ -176,41 +177,85 @@
                     </form>
                 </div>
                 
+                <!-- GESTION COMPLÈTE DES RENDEZ-VOUS - SEULEMENT POUR LE SECRÉTARIAT -->
                 <div class="card">
-                    <h3><i class="fas fa-calendar-alt"></i> Gestion des Rendez-vous</h3>
-                    <div class="d-flex" style="gap:15px; margin-bottom: 15px;">
-                        <input type="text" id="appointment-patient-search" class="form-control" placeholder="ID patient">
-                        <button id="search-appointment-patient" class="btn"><i class="fas fa-search"></i> Rechercher</button>
+                    <h3><i class="fas fa-calendar-alt"></i> Gestion Complète des Rendez-vous</h3>
+                    
+                    <!-- Formulaire de prise de rendez-vous -->
+                    <div class="appointment-form">
+                        <h4>Prendre un nouveau rendez-vous</h4>
+                        <div class="form-group">
+                            <label class="form-label">Rechercher patient *</label>
+                            <div class="d-flex" style="gap:10px;">
+                                <input type="text" id="appointment-patient-search" class="form-control" placeholder="ID patient">
+                                <button type="button" id="search-appointment-patient-btn" class="btn btn-secondary">
+                                    <i class="fas fa-search"></i> Rechercher
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div id="appointment-patient-info" class="hidden">
+                            <div class="card" style="background:#f8f9fa;">
+                                <h5>Patient: <span id="appointment-patient-name"></span> (<span id="appointment-patient-id"></span>)</h5>
+                                <p>Téléphone: <span id="appointment-patient-phone"></span></p>
+                            </div>
+                            
+                            <div class="form-group mt-3">
+                                <label class="form-label">Date du rendez-vous *</label>
+                                <input type="date" id="appointment-date" class="form-control" min="">
+                            </div>
+                            
+                            <div class="form-group">
+                                <label class="form-label">Heure *</label>
+                                <input type="time" id="appointment-time" class="form-control">
+                            </div>
+                            
+                            <div class="form-group">
+                                <label class="form-label">Médecin *</label>
+                                <select id="appointment-doctor" class="form-control">
+                                    <option value="">Sélectionner un médecin</option>
+                                </select>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label class="form-label">Motif *</label>
+                                <textarea id="appointment-reason" class="form-control" rows="2" placeholder="Raison du rendez-vous"></textarea>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label class="form-label">Notes supplémentaires</label>
+                                <textarea id="appointment-notes" class="form-control" rows="2" placeholder="Notes optionnelles"></textarea>
+                            </div>
+                            
+                            <div class="d-flex" style="gap:10px;">
+                                <button type="button" id="schedule-appointment-btn" class="btn btn-success">
+                                    <i class="fas fa-calendar-plus"></i> Programmer le rendez-vous
+                                </button>
+                                <button type="button" id="cancel-appointment-form" class="btn btn-secondary">
+                                    Annuler
+                                </button>
+                            </div>
+                        </div>
                     </div>
                     
-                    <div id="appointment-patient-details" class="hidden">
-                        <h4>Patient: <span id="appointment-patient-name"></span></h4>
-                        <div class="form-group">
-                            <label class="form-label">Date du rendez-vous</label>
-                            <input type="date" id="appointment-date" class="form-control">
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">Heure du rendez-vous</label>
-                            <input type="time" id="appointment-time" class="form-control">
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">Motif</label>
-                            <input type="text" id="appointment-reason" class="form-control" placeholder="Motif du rendez-vous">
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">Médecin</label>
-                            <select id="appointment-doctor" class="form-control">
-                                <option value="">Sélectionner un médecin</option>
-                            </select>
-                        </div>
-                        <button id="schedule-appointment" class="btn btn-success">
-                            <i class="fas fa-calendar-plus"></i> Programmer le rendez-vous
-                        </button>
-                    </div>
-                    
-                    <div class="mt-3">
+                    <!-- Liste des rendez-vous avec filtres -->
+                    <div class="mt-4">
                         <h4>Rendez-vous programmés</h4>
-                        <div id="appointments-list"></div>
+                        <div class="d-flex" style="gap:10px; margin-bottom:15px;">
+                            <select id="appointment-filter" class="form-control" style="width:200px;">
+                                <option value="all">Tous les rendez-vous</option>
+                                <option value="today">Aujourd'hui</option>
+                                <option value="upcoming">À venir</option>
+                                <option value="past">Passés</option>
+                            </select>
+                            <button type="button" id="refresh-appointments" class="btn btn-secondary">
+                                <i class="fas fa-sync-alt"></i> Actualiser
+                            </button>
+                        </div>
+                        
+                        <div id="appointments-list-container">
+                            <!-- Les rendez-vous seront affichés ici par JavaScript -->
+                        </div>
                     </div>
                 </div>
                 
@@ -668,18 +713,27 @@
                     </div>
                 </div>
                 
+                <!-- AFFICHAGE DES RENDEZ-VOUS DU MÉDECIN SEULEMENT -->
                 <div class="card mt-3">
-                    <h3><i class="fas fa-flask"></i> Résultats d'analyses</h3>
-                    <div id="doctor-lab-results"></div>
+                    <h3><i class="fas fa-calendar-check"></i> Mes Rendez-vous</h3>
+                    <div class="d-flex" style="gap:10px; margin-bottom:15px;">
+                        <select id="doctor-appointment-filter" class="form-control" style="width:200px;">
+                            <option value="today">Aujourd'hui</option>
+                            <option value="upcoming">À venir</option>
+                            <option value="all">Tous mes rendez-vous</option>
+                        </select>
+                        <button type="button" id="refresh-doctor-appointments" class="btn btn-secondary">
+                            <i class="fas fa-sync-alt"></i> Actualiser
+                        </button>
+                    </div>
+                    <div id="doctor-appointments-list">
+                        <!-- Les rendez-vous du médecin seront affichés ici par JavaScript -->
+                    </div>
                 </div>
                 
                 <div class="card mt-3">
-                    <h3><i class="fas fa-calendar-alt"></i> Rendez-vous des Patients</h3>
-                    <div class="d-flex" style="gap:15px; margin-bottom: 15px;">
-                        <input type="text" id="doctor-appointment-search-medical" class="form-control" placeholder="ID patient">
-                        <button id="search-doctor-appointment-medical" class="btn"><i class="fas fa-search"></i> Rechercher</button>
-                    </div>
-                    <div id="doctor-appointment-results-medical"></div>
+                    <h3><i class="fas fa-flask"></i> Résultats d'analyses</h3>
+                    <div id="doctor-lab-results"></div>
                 </div>
             </section>
             
@@ -1286,6 +1340,7 @@
                 transactions: [],
                 transactionCounter: 1,
                 patientCounter: 1,
+                appointmentCounter: 1,
                 vitalTypes: [],
                 vitals: [],
                 consultationTypes: [],

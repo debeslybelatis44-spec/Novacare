@@ -602,21 +602,8 @@ function setupDoctor() {
         alert("Consultation chargée pour modification. Modifiez les champs et enregistrez à nouveau.");
     });
     
-    // Initialiser la recherche de rendez-vous pour le médecin
-    const searchBtn = document.getElementById('search-doctor-appointment-medical');
-    if (searchBtn) {
-        searchBtn.addEventListener('click', function() {
-            console.log("Recherche de rendez-vous déclenchée (médecin)");
-            searchDoctorAppointmentsByPatient();
-        });
-    } else {
-        console.log("Bouton de recherche de rendez-vous médecin introuvable - peut-être pas sur cette page");
-    }
-    
-    // Charger les rendez-vous au chargement
-    setTimeout(() => {
-        loadAllDoctorAppointments();
-    }, 100);
+    // ==================== RENDEZ-VOUS POUR LE MÉDECIN ====================
+    setupDoctorAppointments();
     
     console.log("Module médecin initialisé avec succès");
 }
@@ -697,72 +684,6 @@ function updateLabAnalysesSelect() {
     container.innerHTML = html;
 }
 
-function addMedicationToPrescription(medId) {
-    const med = state.medicationStock.find(m => m.id === medId);
-    if (!med) return;
-    
-    const tableBody = document.getElementById('prescription-medications-list');
-    if (!tableBody) return;
-    
-    const row = document.createElement('tr');
-    row.innerHTML = `
-        <td>${med.name}</td>
-        <td><input type="text" class="form-control" placeholder="Ex: 1 comprimé matin et soir" value="1 comprimé 3x/jour"></td>
-        <td><input type="number" class="form-control quantity-input" data-med-id="${med.id}" value="10" min="1" max="${med.quantity}"></td>
-        <td>${med.quantity}</td>
-        <td><button class="btn btn-danger btn-sm" onclick="removeMedicationFromPrescription(this)">Supprimer</button></td>
-    `;
-    
-    tableBody.appendChild(row);
-    
-    const suggestions = document.getElementById('medication-suggestions');
-    if (suggestions) suggestions.classList.add('hidden');
-    
-    const searchInput = document.getElementById('medication-search');
-    if (searchInput) searchInput.value = '';
-    
-    checkStockWarnings();
-}
-
-function removeMedicationFromPrescription(button) {
-    button.closest('tr').remove();
-    checkStockWarnings();
-}
-
-function checkStockWarnings() {
-    const warnings = document.getElementById('stock-warnings');
-    if (!warnings) return;
-    
-    const rows = document.querySelectorAll('#prescription-medications-list tr');
-    
-    let warningHtml = '';
-    let hasWarning = false;
-    
-    rows.forEach(row => {
-        const medId = row.querySelector('.quantity-input')?.dataset.medId;
-        const quantityInput = row.querySelector('.quantity-input');
-        if (!medId || !quantityInput) return;
-        
-        const quantity = parseInt(quantityInput.value);
-        const med = state.medicationStock.find(m => m.id === medId);
-        
-        if (med) {
-            if (quantity > med.quantity) {
-                warningHtml += `<div class="alert alert-warning">${med.name}: Stock insuffisant (demandé: ${quantity}, disponible: ${med.quantity})</div>`;
-                hasWarning = true;
-            } else if (med.quantity <= med.alertThreshold) {
-                warningHtml += `<div class="alert alert-info">${med.name}: Stock faible (${med.quantity} ${med.unit})</div>`;
-            }
-        }
-    });
-    
-    warnings.innerHTML = warningHtml;
-    const deliverBtn = document.getElementById('deliver-medications');
-    if (deliverBtn) {
-        deliverBtn.disabled = hasWarning;
-    }
-}
-
 function updateDoctorLabResults(patientId) {
     const container = document.getElementById('doctor-lab-results');
     if (!container) return;
@@ -801,150 +722,102 @@ function updateDoctorLabResults(patientId) {
     container.innerHTML = html;
 }
 
-// ==================== FONCTIONS RENDEZ-VOUS MÉDECIN ====================
-
-// Fonction pour charger tous les rendez-vous du médecin
-function loadAllDoctorAppointments() {
-    const container = document.getElementById('doctor-appointment-results-medical');
-    if (!container) {
-        console.error("Container des rendez-vous médecin introuvable!");
-        return;
-    }
+// ==================== RENDEZ-VOUS MÉDECIN ====================
+function setupDoctorAppointments() {
+    // Événement de filtre
+    document.getElementById('doctor-appointment-filter').addEventListener('change', loadDoctorAppointments);
     
-    if (!state.currentUser || !state.currentUser.username) {
-        container.innerHTML = '<p>Utilisateur non connecté.</p>';
-        return;
-    }
+    // Événement d'actualisation
+    document.getElementById('refresh-doctor-appointments').addEventListener('click', loadDoctorAppointments);
     
-    const today = new Date().toISOString().split('T')[0];
-    console.log("Recherche des rendez-vous pour le médecin:", state.currentUser.username);
-    console.log("Tous les rendez-vous:", state.appointments);
-    
-    const doctorAppointments = state.appointments.filter(a => 
-        a.doctor === state.currentUser.username && 
-        a.date >= today
-    ).sort((a, b) => new Date(a.date + ' ' + a.time) - new Date(b.date + ' ' + b.time));
-    
-    console.log("Rendez-vous trouvés:", doctorAppointments);
-    
-    if (doctorAppointments.length === 0) {
-        container.innerHTML = '<p>Aucun rendez-vous programmé.</p>';
-        return;
-    }
-    
-    let html = '<h4>Vos rendez-vous à venir</h4>';
-    html += '<table class="table-container"><thead><tr><th>Patient</th><th>Date</th><th>Heure</th><th>Motif</th><th>Statut</th></tr></thead><tbody>';
-    
-    doctorAppointments.forEach(app => {
-        const appDate = new Date(app.date);
-        const todayDate = new Date();
-        let status = 'À venir';
-        let statusClass = 'status-upcoming';
-        
-        if (appDate.toDateString() === todayDate.toDateString()) {
-            status = 'Aujourd\'hui';
-            statusClass = 'status-today';
-        }
-        
-        html += `
-            <tr>
-                <td>${app.patientName} (${app.patientId})</td>
-                <td>${app.date}</td>
-                <td>${app.time}</td>
-                <td>${app.reason}</td>
-                <td><span class="patient-status-badge ${statusClass}">${status}</span></td>
-            </tr>
-        `;
-    });
-    
-    html += '</tbody></table>';
-    container.innerHTML = html;
+    // Charger les rendez-vous au démarrage
+    loadDoctorAppointments();
 }
 
-// Fonction pour rechercher les rendez-vous par patient (médecin)
-function searchDoctorAppointmentsByPatient() {
-    console.log("Fonction searchDoctorAppointmentsByPatient appelée (médecin)");
+function loadDoctorAppointments() {
+    const filter = document.getElementById('doctor-appointment-filter').value;
+    const today = new Date().toISOString().split('T')[0];
     
-    const searchInput = document.getElementById('doctor-appointment-search-medical');
-    const container = document.getElementById('doctor-appointment-results-medical');
+    // Filtrer les rendez-vous du médecin connecté
+    let doctorAppointments = state.appointments.filter(a => a.doctor === state.currentUser.username);
     
-    if (!searchInput || !container) {
-        alert("Éléments de recherche introuvables!");
-        return;
+    // Appliquer le filtre supplémentaire
+    switch(filter) {
+        case 'today':
+            doctorAppointments = doctorAppointments.filter(a => a.date === today);
+            break;
+        case 'upcoming':
+            doctorAppointments = doctorAppointments.filter(a => new Date(a.date) >= new Date(today));
+            break;
+        // 'all' ne filtre pas
     }
     
-    const search = searchInput.value.trim();
-    console.log("Terme de recherche:", search);
-    
-    if (!search) {
-        loadAllDoctorAppointments();
-        return;
-    }
-    
-    if (!state.currentUser || !state.currentUser.username) {
-        container.innerHTML = '<p>Utilisateur non connecté.</p>';
-        return;
-    }
-    
-    console.log("Médecin connecté:", state.currentUser.username);
-    console.log("Tous les rendez-vous:", state.appointments);
-    
-    // Rechercher les rendez-vous de ce médecin pour ce patient
-    const doctorAppointments = state.appointments.filter(a => {
-        // D'abord, vérifier que c'est bien un rendez-vous pour ce médecin
-        const isForThisDoctor = a.doctor === state.currentUser.username;
-        
-        // Ensuite, vérifier si ça correspond à la recherche (par ID patient ou nom patient)
-        const matchesSearch = 
-            a.patientId.toLowerCase().includes(search.toLowerCase()) ||
-            a.patientName.toLowerCase().includes(search.toLowerCase());
-        
-        return isForThisDoctor && matchesSearch;
-    });
-    
-    console.log("Rendez-vous trouvés:", doctorAppointments);
-    
-    if (doctorAppointments.length === 0) {
-        container.innerHTML = '<p>Aucun rendez-vous trouvé pour ce patient.</p>';
-        return;
-    }
-    
-    // Trier par date
+    // Trier par date et heure
     doctorAppointments.sort((a, b) => {
-        const dateA = new Date(a.date + ' ' + a.time);
-        const dateB = new Date(b.date + ' ' + b.time);
+        const dateA = new Date(`${a.date}T${a.time}`);
+        const dateB = new Date(`${b.date}T${b.time}`);
         return dateA - dateB;
     });
     
-    let html = '<h4>Rendez-vous trouvés</h4>';
-    html += '<table class="table-container"><thead><tr><th>Patient</th><th>Date</th><th>Heure</th><th>Motif</th><th>Statut</th></tr></thead><tbody>';
+    const container = document.getElementById('doctor-appointments-list');
     
-    doctorAppointments.forEach(app => {
-        const today = new Date();
-        const appDate = new Date(app.date);
-        let status = 'À venir';
-        let statusClass = 'status-upcoming';
+    if (doctorAppointments.length === 0) {
+        container.innerHTML = '<p class="text-center">Aucun rendez-vous trouvé.</p>';
+        return;
+    }
+    
+    let html = '<div class="table-container">';
+    html += '<table>';
+    html += '<thead>';
+    html += '<tr>';
+    html += '<th>Patient</th>';
+    html += '<th>Date</th>';
+    html += '<th>Heure</th>';
+    html += '<th>Motif</th>';
+    html += '<th>Statut</th>';
+    html += '</tr>';
+    html += '</thead>';
+    html += '<tbody>';
+    
+    doctorAppointments.forEach(appointment => {
+        let statusClass = '';
+        let statusText = '';
         
-        if (appDate < today) {
-            status = 'Passé';
-            statusClass = 'status-past';
-        } else if (appDate.toDateString() === today.toDateString()) {
-            status = 'Aujourd\'hui';
-            statusClass = 'status-today';
+        switch(appointment.status) {
+            case 'scheduled':
+                statusClass = 'status-upcoming';
+                statusText = 'Programmé';
+                break;
+            case 'completed':
+                statusClass = 'status-paid';
+                statusText = 'Terminé';
+                break;
+            case 'cancelled':
+                statusClass = 'status-unpaid';
+                statusText = 'Annulé';
+                break;
+            case 'no-show':
+                statusClass = 'status-unpaid';
+                statusText = 'Non présent';
+                break;
+            default:
+                statusClass = '';
+                statusText = appointment.status;
         }
         
-        html += `
-            <tr>
-                <td>${app.patientName} (${app.patientId})</td>
-                <td>${app.date}</td>
-                <td>${app.time}</td>
-                <td>${app.reason}</td>
-                <td><span class="patient-status-badge ${statusClass}">${status}</span></td>
-            </tr>
-        `;
+        html += '<tr>';
+        html += `<td>${appointment.patientName}<br><small>${appointment.patientId}</small></td>`;
+        html += `<td>${appointment.date}</td>`;
+        html += `<td>${appointment.time}</td>`;
+        html += `<td>${appointment.reason}</td>`;
+        html += `<td><span class="patient-status-badge ${statusClass}">${statusText}</span></td>`;
+        html += '</tr>';
     });
     
-    html += '</tbody></table>';
+    html += '</tbody>';
+    html += '</table>';
+    html += '</div>';
+    
     container.innerHTML = html;
 }
 

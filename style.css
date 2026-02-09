@@ -112,7 +112,7 @@ tr:hover { background-color: #f8fbff; }
 .receipt-item { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px dashed #ddd; }
 .receipt-total { font-weight: bold; font-size: 1.2rem; margin-top: 10px; }
 
-.appointment-form { background: #f8fbff; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
+.appointment-form { background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #1a6bca; }
 .appointment-list { max-height: 400px; overflow-y: auto; }
 .appointment-item { border: 1px solid #eef5ff; border-radius: 8px; padding: 15px; margin-bottom: 10px; background: white; }
 .appointment-status { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 0.8rem; font-weight: bold; }
@@ -204,7 +204,7 @@ tr:hover { background-color: #f8fbff; }
 .admin-search-section { margin-bottom: 25px; }
 .appointment-actions { display: flex; gap: 10px; margin-top: 10px; }
 
-/* Nouveaux styles pour les modifications */
+/* Nouveaux styles pour les rendez-vous */
 .privilege-container { background: #f8f9fa; padding: 15px; border-radius: 8px; margin: 15px 0; }
 .sponsored-discount { background: #e7f3ff; padding: 10px; border-radius: 5px; margin-top: 10px; }
 .consultation-display { background: #f8f9fa; padding: 15px; border-radius: 8px; margin: 15px 0; }
@@ -219,7 +219,6 @@ tr:hover { background-color: #f8fbff; }
 .signature-area { margin-top: 80px; }
 .logo-upload-container { margin: 10px 0; }
 .logo-preview { max-width: 100px; max-height: 100px; margin: 10px 0; }
-/* Ajouter à la fin du fichier */
 
 .payment-method-currency-selector {
     display: flex;
@@ -347,4 +346,66 @@ tr:hover { background-color: #f8fbff; }
     .payment-method-selector {
         grid-template-columns: repeat(2, 1fr);
     }
+}
+
+/* Styles pour les modales */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0,0,0,0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+    padding: 20px;
+}
+
+.modal-content {
+    background: white;
+    padding: 30px;
+    border-radius: 10px;
+    max-width: 600px;
+    width: 100%;
+    max-height: 80vh;
+    overflow-y: auto;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+}
+
+/* Styles pour les états de rendez-vous */
+.status-upcoming {
+    background-color: #17a2b8;
+    color: white;
+}
+
+.status-today {
+    background-color: #28a745;
+    color: white;
+}
+
+.status-past {
+    background-color: #6c757d;
+    color: white;
+}
+
+.status-scheduled {
+    background-color: #17a2b8;
+    color: white;
+}
+
+.status-completed {
+    background-color: #28a745;
+    color: white;
+}
+
+.status-cancelled {
+    background-color: #dc3545;
+    color: white;
+}
+
+.status-no-show {
+    background-color: #6c757d;
+    color: white;
 }

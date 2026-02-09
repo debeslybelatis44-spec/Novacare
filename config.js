@@ -46,6 +46,7 @@ const state = {
     externalServices: [],
     patientCounter: 1,
     transactionCounter: 1,
+    appointmentCounter: 1,
     messages: [],
     unreadMessages: 0,
     currentConversation: null,
@@ -423,8 +424,25 @@ function loadDemoData() {
             time: '10:00',
             reason: 'Contrôle post-consultation',
             doctor: 'doctor',
+            doctorName: 'Docteur',
             createdBy: 'secretary',
-            status: 'scheduled'
+            createdAt: new Date().toISOString(),
+            status: 'scheduled',
+            notes: ''
+        },
+        {
+            id: 'APP0002',
+            patientId: 'URG0002',
+            patientName: 'Marie Curie',
+            date: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+            time: '14:30',
+            reason: 'Suivi urgence',
+            doctor: 'doctor',
+            doctorName: 'Docteur',
+            createdBy: 'secretary',
+            createdAt: new Date().toISOString(),
+            status: 'scheduled',
+            notes: ''
         }
     );
     
@@ -457,4 +475,5 @@ function loadDemoData() {
     
     state.patientCounter = 5;
     state.transactionCounter = 4;
+    state.appointmentCounter = 3;
 }
