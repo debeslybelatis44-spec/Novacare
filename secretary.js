@@ -6,39 +6,75 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function setupSecretary() {
-    // Mettre à jour les listes déroulantes
+    // Initialisation
     updateConsultationTypesSelect();
+    updateTodayPatientsList();
     updateExternalServicesSelect();
     updateExternalServicesOptions();
-    loadDoctorsForAppointments();
+    loadAppointmentsList();
     
     // Enregistrement patient
     document.getElementById('patient-registration-form').addEventListener('submit', registerPatient);
     
-    // Gestion des consultations modifiées
-    document.getElementById('modify-consultation-type-btn').addEventListener('click', showConsultationModification);
-    document.getElementById('save-modified-consultation').addEventListener('click', saveModifiedConsultation);
-    document.getElementById('cancel-consultation-modification').addEventListener('click', hideConsultationModification);
-    
-    // Services externes
-    document.getElementById('external-only').addEventListener('change', toggleExternalServicesSelection);
-    document.getElementById('add-external-service-registration').addEventListener('click', addExternalServiceRegistration);
-    
-    // Rendez-vous
+    // Recherche patient pour rendez-vous
     document.getElementById('search-appointment-patient').addEventListener('click', searchAppointmentPatient);
     document.getElementById('schedule-appointment').addEventListener('click', scheduleAppointment);
     
-    // Services externes - facturation
+    // Services externes
     document.getElementById('search-external-patient').addEventListener('click', searchExternalPatient);
-    document.getElementById('add-external-service').addEventListener('click', addExternalServiceToPatient);
+    document.getElementById('add-external-service').addEventListener('click', addExternalService);
+    document.getElementById('add-external-service-registration').addEventListener('click', addExternalServiceRegistration);
     document.getElementById('generate-external-invoice').addEventListener('click', generateExternalInvoice);
     
-    // Impression
-    document.getElementById('generate-patient-id-card').addEventListener('click', generatePatientIdCard);
+    // Génération de documents
+    document.getElementById('generate-patient-id-card').addEventListener('click', generatePatientIDCard);
     document.getElementById('generate-medical-certificate').addEventListener('click', generateMedicalCertificate);
     
-    // Mettre à jour la liste des patients d'aujourd'hui
-    updateTodayPatientsList();
+    // Modification du type de consultation (SEULEMENT POUR SECRÉTARIAT - pas de modification de nom/prix)
+    document.getElementById('modify-consultation-type-btn').addEventListener('click', () => {
+        // Pour le secrétariat, on ne montre que la sélection du type, pas la modification du nom/prix
+        const consultationSelect = document.getElementById('consultation-type-secretary');
+        if (consultationSelect && consultationSelect.value) {
+            // Juste permettre de changer le type sélectionné
+            alert("Sélectionnez un nouveau type de consultation dans la liste déroulante.");
+            consultationSelect.focus();
+        } else {
+            alert("Veuillez d'abord sélectionner un type de consultation.");
+        }
+    });
+    
+    // Cacher le panneau de modification de nom/prix pour le secrétariat
+    document.getElementById('consultation-modification-secretary')?.classList.add('hidden');
+    
+    // Écouteur pour le changement de type de patient
+    document.querySelectorAll('input[name="patient-type"]').forEach(radio => {
+        radio.addEventListener('change', function() {
+            const externalOnly = document.getElementById('external-only');
+            const consultationTypeContainer = document.getElementById('consultation-type-container');
+            const externalServicesSelection = document.getElementById('external-services-selection');
+            
+            if (this.value === 'externe' || externalOnly.checked) {
+                consultationTypeContainer.classList.add('hidden');
+                externalServicesSelection.classList.remove('hidden');
+            } else {
+                consultationTypeContainer.classList.remove('hidden');
+                externalServicesSelection.classList.add('hidden');
+            }
+        });
+    });
+    
+    document.getElementById('external-only').addEventListener('change', function() {
+        const consultationTypeContainer = document.getElementById('consultation-type-container');
+        const externalServicesSelection = document.getElementById('external-services-selection');
+        
+        if (this.checked) {
+            consultationTypeContainer.classList.add('hidden');
+            externalServicesSelection.classList.remove('hidden');
+        } else {
+            consultationTypeContainer.classList.remove('hidden');
+            externalServicesSelection.classList.add('hidden');
+        }
+    });
 }
 
 function updateConsultationTypesSelect() {
@@ -48,59 +84,49 @@ function updateConsultationTypesSelect() {
     select.innerHTML = '<option value="">Sélectionner...</option>';
     state.consultationTypes.forEach(type => {
         if (type.active) {
+            // Le secrétariat voit les prix
             select.innerHTML += `<option value="${type.id}" data-price="${type.price}">${type.name} - ${type.price} Gdes</option>`;
         }
     });
 }
 
-function updateExternalServicesSelect() {
-    const select = document.getElementById('external-service-select');
-    if (!select) return;
-    
-    select.innerHTML = '<option value="">Choisir un service</option>';
-    state.externalServiceTypes.forEach(service => {
-        if (service.active) {
-            select.innerHTML += `<option value="${service.id}" data-price="${service.price}">${service.name} - ${service.price} Gdes</option>`;
-        }
-    });
-}
-
-function updateExternalServicesOptions() {
-    const container = document.getElementById('external-services-options');
+function updateTodayPatientsList() {
+    const container = document.getElementById('today-patients-list');
     if (!container) return;
     
+    const today = new Date().toISOString().split('T')[0];
+    const todayPatients = state.patients.filter(p => p.registrationDate === today);
+    
     let html = '';
-    state.externalServiceTypes.forEach(service => {
-        if (service.active) {
-            html += `
-                <div class="external-service-option">
-                    <label>
-                        <input type="checkbox" class="external-service-checkbox" data-id="${service.id}" data-name="${service.name}" data-price="${service.price}">
-                        ${service.name} - ${service.price} Gdes
-                    </label>
-                </div>
-            `;
-        }
+    todayPatients.forEach(patient => {
+        const consultationTransaction = state.transactions.find(t => 
+            t.patientId === patient.id && 
+            t.type === 'consultation'
+        );
+        const consultationType = consultationTransaction ? 
+            consultationTransaction.service.replace('Consultation: ', '') : 'Aucune';
+        
+        html += `
+            <tr>
+                <td>${patient.id}</td>
+                <td>${patient.fullName}</td>
+                <td>${patient.phone}</td>
+                <td>${patient.type}</td>
+                <td>${consultationType}</td>
+                <td>
+                    <button class="btn btn-sm btn-info" onclick="viewPatientCard('${patient.id}')">Carte</button>
+                    <button class="btn btn-sm btn-warning" onclick="editPatientRegistration('${patient.id}')">Modifier</button>
+                </td>
+            </tr>
+        `;
     });
     
-    container.innerHTML = html;
-}
-
-function loadDoctorsForAppointments() {
-    const select = document.getElementById('appointment-doctor');
-    if (!select) return;
-    
-    select.innerHTML = '<option value="">Sélectionner un médecin</option>';
-    const doctors = state.users.filter(u => u.role === 'doctor' && u.active);
-    doctors.forEach(doctor => {
-        select.innerHTML += `<option value="${doctor.username}">Dr. ${doctor.name}</option>`;
-    });
+    container.innerHTML = html || '<tr><td colspan="6" class="text-center">Aucun patient enregistré aujourd\'hui</td></tr>';
 }
 
 function registerPatient(e) {
     e.preventDefault();
     
-    // Récupérer les valeurs du formulaire
     const fullName = document.getElementById('patient-fullname').value.trim();
     const birthDate = document.getElementById('patient-birthdate').value;
     const address = document.getElementById('patient-address').value.trim();
@@ -112,30 +138,22 @@ function registerPatient(e) {
     const externalOnly = document.getElementById('external-only').checked;
     const consultationTypeId = document.getElementById('consultation-type-secretary').value;
     
-    // Validation
     if (!fullName || !birthDate || !phone) {
-        alert("Veuillez remplir tous les champs obligatoires (*)!");
+        alert("Veuillez remplir les champs obligatoires (Nom, Date de naissance, Téléphone)!");
         return;
     }
     
-    if (!externalOnly && !consultationTypeId) {
-        alert("Veuillez sélectionner un type de consultation!");
-        return;
-    }
-    
-    // Générer un ID patient
+    // Générer ID patient
     let prefix = 'PAT';
-    switch(patientType) {
-        case 'urgence': prefix = 'URG'; break;
-        case 'pediatrie': prefix = 'PED'; break;
-        case 'externe': prefix = 'EXT'; break;
-    }
+    if (patientType === 'urgence') prefix = 'URG';
+    if (patientType === 'pediatrie') prefix = 'PED';
+    if (patientType === 'externe') prefix = 'EXT';
     
     const patientId = prefix + String(state.patientCounter).padStart(4, '0');
     state.patientCounter++;
     
     // Créer le patient
-    const newPatient = {
+    const patient = {
         id: patientId,
         fullName: fullName,
         birthDate: birthDate,
@@ -148,65 +166,52 @@ function registerPatient(e) {
         vip: false,
         sponsored: false,
         discountPercentage: 0,
+        hasCreditPrivilege: false,
+        creditLimit: 0,
+        creditUsed: 0,
         privilegeGrantedDate: null,
         registrationDate: new Date().toISOString().split('T')[0],
         registrationTime: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
         registeredBy: state.currentUser.username
     };
     
-    state.patients.push(newPatient);
+    state.patients.push(patient);
     
     // Créer la transaction de consultation si nécessaire
-    if (!externalOnly) {
+    if (!externalOnly && consultationTypeId) {
         const consultationType = state.consultationTypes.find(t => t.id == consultationTypeId);
         if (consultationType) {
-            let consultationPrice = consultationType.price;
-            let consultationName = consultationType.name;
-            
-            // Vérifier si le type a été modifié
-            if (state.currentModifiedConsultation && state.currentModifiedConsultation.originalId == consultationTypeId) {
-                consultationPrice = state.currentModifiedConsultation.modifiedPrice;
-                consultationName = state.currentModifiedConsultation.modifiedName;
-            }
-            
             const transaction = {
-                id: 'CONS' + Date.now(),
+                id: 'TR' + Date.now(),
                 patientId: patientId,
                 patientName: fullName,
-                service: `Consultation: ${consultationName}`,
-                amount: consultationPrice,
+                service: `Consultation: ${consultationType.name}`,
+                amount: consultationType.price,
                 status: 'unpaid',
                 date: new Date().toISOString().split('T')[0],
                 time: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
                 createdBy: state.currentUser.username,
                 type: 'consultation',
-                consultationTypeId: consultationTypeId,
-                modified: state.currentModifiedConsultation ? true : false,
-                modifiedName: state.currentModifiedConsultation ? state.currentModifiedConsultation.modifiedName : null,
-                modifiedPrice: state.currentModifiedConsultation ? state.currentModifiedConsultation.modifiedPrice : null
+                notificationSent: false
             };
             
             state.transactions.push(transaction);
-            
-            // Envoyer notification au caissier
             sendNotificationToCashier(transaction);
         }
     }
     
     // Ajouter les services externes sélectionnés
-    if (externalOnly || document.getElementById('external-services-selection').classList.contains('hidden') === false) {
-        const externalCheckboxes = document.querySelectorAll('.external-service-checkbox:checked');
-        externalCheckboxes.forEach(checkbox => {
-            const serviceId = checkbox.dataset.id;
-            const serviceName = checkbox.dataset.name;
-            const servicePrice = parseFloat(checkbox.dataset.price);
-            
-            const externalTransaction = {
+    const selectedServices = document.querySelectorAll('.external-service-option input:checked');
+    selectedServices.forEach(checkbox => {
+        const serviceId = checkbox.value;
+        const service = state.externalServiceTypes.find(s => s.id == serviceId);
+        if (service) {
+            const transaction = {
                 id: 'EXT' + Date.now(),
                 patientId: patientId,
                 patientName: fullName,
-                service: `Service externe: ${serviceName}`,
-                amount: servicePrice,
+                service: `Service externe: ${service.name}`,
+                amount: service.price,
                 status: 'unpaid',
                 date: new Date().toISOString().split('T')[0],
                 time: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
@@ -215,119 +220,30 @@ function registerPatient(e) {
                 notificationSent: false
             };
             
-            state.transactions.push(externalTransaction);
-            
-            // Envoyer notification au caissier
-            sendNotificationToCashier(externalTransaction);
-        });
-    }
+            state.transactions.push(transaction);
+        }
+    });
     
-    alert(`Patient enregistré avec succès!\nID Patient: ${patientId}`);
+    alert(`Patient enregistré avec succès!\nID: ${patientId}`);
     
     // Réinitialiser le formulaire
     e.target.reset();
-    state.currentModifiedConsultation = null;
     document.getElementById('external-services-selection').classList.add('hidden');
-    document.getElementById('consultation-modification-secretary').classList.add('hidden');
-    document.getElementById('modify-consultation-type-btn').classList.add('hidden');
+    document.getElementById('consultation-type-container').classList.remove('hidden');
+    document.getElementById('external-only').checked = false;
     
-    // Mettre à jour la liste des patients
+    // Mettre à jour les listes
     updateTodayPatientsList();
-}
-
-function showConsultationModification() {
-    const consultationTypeId = document.getElementById('consultation-type-secretary').value;
-    if (!consultationTypeId) {
-        alert("Veuillez d'abord sélectionner un type de consultation!");
-        return;
-    }
-    
-    const consultationType = state.consultationTypes.find(t => t.id == consultationTypeId);
-    if (!consultationType) return;
-    
-    document.getElementById('modified-consultation-name').value = consultationType.name;
-    document.getElementById('modified-consultation-price').value = consultationType.price;
-    
-    document.getElementById('consultation-modification-secretary').classList.remove('hidden');
-    
-    // Stocker la consultation originale pour référence
-    state.currentModifiedConsultation = {
-        originalId: consultationTypeId,
-        originalName: consultationType.name,
-        originalPrice: consultationType.price,
-        modifiedName: consultationType.name,
-        modifiedPrice: consultationType.price
-    };
-}
-
-function saveModifiedConsultation() {
-    const modifiedName = document.getElementById('modified-consultation-name').value.trim();
-    const modifiedPrice = parseFloat(document.getElementById('modified-consultation-price').value);
-    
-    if (!modifiedName || isNaN(modifiedPrice) || modifiedPrice < 0) {
-        alert("Veuillez entrer un nom et un prix valides!");
-        return;
-    }
-    
-    if (state.currentModifiedConsultation) {
-        state.currentModifiedConsultation.modifiedName = modifiedName;
-        state.currentModifiedConsultation.modifiedPrice = modifiedPrice;
-    }
-    
-    alert("Modification enregistrée! Cette modification s'appliquera uniquement au patient en cours.");
-    hideConsultationModification();
-}
-
-function hideConsultationModification() {
-    document.getElementById('consultation-modification-secretary').classList.add('hidden');
-}
-
-function toggleExternalServicesSelection() {
-    const externalOnly = document.getElementById('external-only').checked;
-    const externalServicesDiv = document.getElementById('external-services-selection');
-    const consultationContainer = document.getElementById('consultation-type-container');
-    
-    if (externalOnly) {
-        externalServicesDiv.classList.remove('hidden');
-        consultationContainer.classList.add('hidden');
-    } else {
-        externalServicesDiv.classList.add('hidden');
-        consultationContainer.classList.remove('hidden');
-    }
-}
-
-function addExternalServiceRegistration() {
-    const serviceName = prompt("Nom du service externe:");
-    const servicePrice = parseFloat(prompt("Prix du service (Gdes):"));
-    
-    if (!serviceName || isNaN(servicePrice) || servicePrice < 0) {
-        alert("Veuillez entrer des informations valides!");
-        return;
-    }
-    
-    const newService = {
-        id: 'CUST' + Date.now(),
-        name: serviceName,
-        price: servicePrice
-    };
-    
-    // Ajouter aux options
-    const container = document.getElementById('external-services-options');
-    container.innerHTML += `
-        <div class="external-service-option">
-            <label>
-                <input type="checkbox" class="external-service-checkbox" data-id="${newService.id}" data-name="${newService.name}" data-price="${newService.price}" checked>
-                ${newService.name} - ${newService.price} Gdes
-            </label>
-        </div>
-    `;
-    
-    alert("Service externe ajouté!");
+    if (typeof updateRoleDashboard === 'function') updateRoleDashboard();
+    if (typeof updateAdminStats === 'function') updateAdminStats();
 }
 
 function searchAppointmentPatient() {
-    const search = document.getElementById('appointment-patient-search').value.trim();
-    const patient = state.patients.find(p => p.id === search);
+    const search = document.getElementById('appointment-patient-search').value.toLowerCase();
+    const patient = state.patients.find(p => 
+        p.id.toLowerCase() === search || 
+        p.fullName.toLowerCase().includes(search)
+    );
     
     if (!patient) {
         alert("Patient non trouvé!");
@@ -336,6 +252,28 @@ function searchAppointmentPatient() {
     
     document.getElementById('appointment-patient-name').textContent = `${patient.fullName} (${patient.id})`;
     document.getElementById('appointment-patient-details').classList.remove('hidden');
+    
+    // Définir la date par défaut à demain
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    document.getElementById('appointment-date').value = tomorrow.toISOString().split('T')[0];
+    
+    // Définir l'heure par défaut à 09:00
+    document.getElementById('appointment-time').value = '09:00';
+    
+    // Charger les médecins
+    loadDoctorsForAppointments();
+}
+
+function loadDoctorsForAppointments() {
+    const select = document.getElementById('appointment-doctor');
+    if (!select) return;
+    
+    select.innerHTML = '<option value="">Sélectionner un médecin</option>';
+    const doctors = state.users.filter(u => u.role === 'doctor' && u.active);
+    doctors.forEach(doctor => {
+        select.innerHTML += `<option value="${doctor.username}">${doctor.name}</option>`;
+    });
 }
 
 function scheduleAppointment() {
@@ -345,8 +283,8 @@ function scheduleAppointment() {
     const reason = document.getElementById('appointment-reason').value.trim();
     const doctor = document.getElementById('appointment-doctor').value;
     
-    if (!patientId || !date || !time || !doctor) {
-        alert("Veuillez remplir tous les champs obligatoires!");
+    if (!patientId || !date || !time || !reason || !doctor) {
+        alert("Veuillez remplir tous les champs!");
         return;
     }
     
@@ -369,25 +307,6 @@ function scheduleAppointment() {
     };
     
     state.appointments.push(appointment);
-    
-    // Envoyer notification au médecin
-    const doctorUser = state.users.find(u => u.username === doctor);
-    if (doctorUser) {
-        const message = {
-            id: 'MSG' + Date.now(),
-            sender: state.currentUser.username,
-            senderRole: state.currentRole,
-            recipient: doctor,
-            recipientRole: 'doctor',
-            subject: 'Nouveau rendez-vous',
-            content: `Nouveau rendez-vous programmé pour le ${date} à ${time} avec ${patient.fullName}. Motif: ${reason}`,
-            timestamp: new Date().toISOString(),
-            read: false,
-            type: 'appointment'
-        };
-        state.messages.push(message);
-        updateMessageBadge();
-    }
     
     alert("Rendez-vous programmé avec succès!");
     
@@ -418,16 +337,17 @@ function loadAppointmentsList() {
     
     let html = '<table class="table-container"><thead><tr><th>Patient</th><th>Date</th><th>Heure</th><th>Motif</th><th>Médecin</th><th>Actions</th></tr></thead><tbody>';
     
-    upcomingAppointments.forEach(appointment => {
+    upcomingAppointments.forEach(app => {
         html += `
             <tr>
-                <td>${appointment.patientName} (${appointment.patientId})</td>
-                <td>${appointment.date}</td>
-                <td>${appointment.time}</td>
-                <td>${appointment.reason}</td>
-                <td>${appointment.doctor}</td>
+                <td>${app.patientName}<br><small>${app.patientId}</small></td>
+                <td>${app.date}</td>
+                <td>${app.time}</td>
+                <td>${app.reason}</td>
+                <td>${app.doctor}</td>
                 <td>
-                    <button class="btn btn-sm btn-warning" onclick="cancelAppointment('${appointment.id}')">Annuler</button>
+                    <button class="btn btn-sm btn-warning" onclick="cancelAppointment('${app.id}')">Annuler</button>
+                    <button class="btn btn-sm btn-info" onclick="rescheduleAppointment('${app.id}')">Reprogrammer</button>
                 </td>
             </tr>
         `;
@@ -438,10 +358,28 @@ function loadAppointmentsList() {
 }
 
 function cancelAppointment(appointmentId) {
-    if (confirm("Êtes-vous sûr de vouloir annuler ce rendez-vous?")) {
-        state.appointments = state.appointments.filter(a => a.id !== appointmentId);
+    if (confirm("Annuler ce rendez-vous?")) {
+        const appointment = state.appointments.find(a => a.id === appointmentId);
+        if (appointment) {
+            appointment.status = 'cancelled';
+            loadAppointmentsList();
+            alert("Rendez-vous annulé!");
+        }
+    }
+}
+
+function rescheduleAppointment(appointmentId) {
+    const appointment = state.appointments.find(a => a.id === appointmentId);
+    if (!appointment) return;
+    
+    const newDate = prompt("Nouvelle date (YYYY-MM-DD):", appointment.date);
+    const newTime = prompt("Nouvelle heure (HH:MM):", appointment.time);
+    
+    if (newDate && newTime) {
+        appointment.date = newDate;
+        appointment.time = newTime;
         loadAppointmentsList();
-        alert("Rendez-vous annulé!");
+        alert("Rendez-vous reprogrammé!");
     }
 }
 
@@ -460,11 +398,10 @@ function searchExternalPatient() {
     document.getElementById('external-patient-name').textContent = `${patient.fullName} (${patient.id})`;
     document.getElementById('external-services-container').classList.remove('hidden');
     
-    // Afficher les services externes existants
-    displayExternalServicesForPatient(patient.id);
+    updateExternalServicesForPatient(patient.id);
 }
 
-function displayExternalServicesForPatient(patientId) {
+function updateExternalServicesForPatient(patientId) {
     const container = document.getElementById('external-services-list');
     const externalTransactions = state.transactions.filter(t => 
         t.patientId === patientId && 
@@ -476,8 +413,7 @@ function displayExternalServicesForPatient(patientId) {
         return;
     }
     
-    let html = '<table class="table-container"><thead><tr><th>Service</th><th>Prix</th><th>Statut</th><th>Actions</th></tr></thead><tbody>';
-    let total = 0;
+    let html = '<table class="table-container"><thead><tr><th>Service</th><th>Montant</th><th>Statut</th><th>Actions</th></tr></thead><tbody>';
     
     externalTransactions.forEach(transaction => {
         html += `
@@ -486,67 +422,82 @@ function displayExternalServicesForPatient(patientId) {
                 <td>${transaction.amount} Gdes</td>
                 <td><span class="${transaction.status === 'paid' ? 'status-paid' : 'status-unpaid'}">${transaction.status === 'paid' ? 'Payé' : 'Non payé'}</span></td>
                 <td>
-                    <button class="btn btn-sm btn-danger" onclick="removeExternalService('${transaction.id}')">Supprimer</button>
+                    <button class="btn btn-sm btn-danger" onclick="deleteExternalService('${transaction.id}')">Supprimer</button>
                 </td>
             </tr>
         `;
-        total += transaction.amount;
     });
     
-    html += `</tbody></table><div class="mt-2"><strong>Total: ${total} Gdes</strong></div>`;
+    html += '</tbody></table>';
     container.innerHTML = html;
 }
 
-function removeExternalService(transactionId) {
+function deleteExternalService(transactionId) {
     if (confirm("Supprimer ce service externe?")) {
         state.transactions = state.transactions.filter(t => t.id !== transactionId);
-        const patientId = document.getElementById('external-service-search').value.trim();
-        displayExternalServicesForPatient(patientId);
+        document.getElementById('search-external-patient').click();
     }
 }
 
-function addExternalServiceToPatient() {
+function updateExternalServicesSelect() {
+    const select = document.getElementById('external-service-select');
+    if (!select) return;
+    
+    select.innerHTML = '<option value="">Choisir un service</option>';
+    state.externalServiceTypes.forEach(service => {
+        if (service.active) {
+            select.innerHTML += `<option value="${service.id}" data-price="${service.price}">${service.name} - ${service.price} Gdes</option>`;
+        }
+    });
+}
+
+function updateExternalServicesOptions() {
+    const container = document.getElementById('external-services-options');
+    if (!container) return;
+    
+    let html = '';
+    state.externalServiceTypes.forEach(service => {
+        if (service.active) {
+            html += `
+                <div class="external-service-option">
+                    <label>
+                        <input type="checkbox" value="${service.id}" data-price="${service.price}">
+                        ${service.name} - ${service.price} Gdes
+                    </label>
+                </div>
+            `;
+        }
+    });
+    
+    container.innerHTML = html;
+}
+
+function addExternalService() {
     const patientId = document.getElementById('external-service-search').value.trim();
-    const serviceSelect = document.getElementById('external-service-select');
-    const priceInput = document.getElementById('new-external-service-price');
+    const serviceId = document.getElementById('external-service-select').value;
+    const customPrice = parseFloat(document.getElementById('new-external-service-price').value);
     
-    if (!patientId) {
-        alert("Veuillez d'abord rechercher un patient!");
+    if (!patientId || !serviceId) {
+        alert("Veuillez sélectionner un patient et un service!");
         return;
-    }
-    
-    const serviceId = serviceSelect.value;
-    let serviceName = '';
-    let servicePrice = 0;
-    
-    if (serviceId) {
-        const service = state.externalServiceTypes.find(s => s.id == serviceId);
-        if (service) {
-            serviceName = service.name;
-            servicePrice = parseFloat(priceInput.value) || service.price;
-        }
-    } else {
-        serviceName = prompt("Nom du service personnalisé:");
-        servicePrice = parseFloat(prompt("Prix du service (Gdes):"));
-        
-        if (!serviceName || isNaN(servicePrice) || servicePrice < 0) {
-            alert("Veuillez entrer des informations valides!");
-            return;
-        }
     }
     
     const patient = state.patients.find(p => p.id === patientId);
-    if (!patient) {
-        alert("Patient non trouvé!");
+    const service = state.externalServiceTypes.find(s => s.id == serviceId);
+    
+    if (!patient || !service) {
+        alert("Patient ou service non trouvé!");
         return;
     }
     
-    const externalTransaction = {
+    const price = customPrice > 0 ? customPrice : service.price;
+    
+    const transaction = {
         id: 'EXT' + Date.now(),
         patientId: patientId,
         patientName: patient.fullName,
-        service: `Service externe: ${serviceName}`,
-        amount: servicePrice,
+        service: `Service externe: ${service.name}`,
+        amount: price,
         status: 'unpaid',
         date: new Date().toISOString().split('T')[0],
         time: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
@@ -555,29 +506,45 @@ function addExternalServiceToPatient() {
         notificationSent: false
     };
     
-    state.transactions.push(externalTransaction);
+    state.transactions.push(transaction);
     
-    // Envoyer notification au caissier
-    sendNotificationToCashier(externalTransaction);
+    document.getElementById('external-service-select').selectedIndex = 0;
+    document.getElementById('new-external-service-price').value = '';
     
-    alert("Service externe ajouté!");
+    updateExternalServicesForPatient(patientId);
+    alert("Service externe ajouté avec succès!");
+}
+
+function addExternalServiceRegistration() {
+    const container = document.getElementById('external-services-options');
+    if (!container) return;
     
-    // Réinitialiser
-    serviceSelect.selectedIndex = 0;
-    priceInput.value = '';
+    let html = container.innerHTML;
+    state.externalServiceTypes.forEach(service => {
+        if (service.active && !html.includes(`value="${service.id}"`)) {
+            html += `
+                <div class="external-service-option">
+                    <label>
+                        <input type="checkbox" value="${service.id}" data-price="${service.price}">
+                        ${service.name} - ${service.price} Gdes
+                    </label>
+                </div>
+            `;
+        }
+    });
     
-    // Mettre à jour l'affichage
-    displayExternalServicesForPatient(patientId);
+    container.innerHTML = html;
 }
 
 function generateExternalInvoice() {
     const patientId = document.getElementById('external-service-search').value.trim();
-    if (!patientId) {
+    const patient = state.patients.find(p => p.id === patientId);
+    
+    if (!patient) {
         alert("Veuillez d'abord rechercher un patient!");
         return;
     }
     
-    const patient = state.patients.find(p => p.id === patientId);
     const externalTransactions = state.transactions.filter(t => 
         t.patientId === patientId && 
         t.type === 'external' &&
@@ -589,10 +556,11 @@ function generateExternalInvoice() {
         return;
     }
     
-    const total = externalTransactions.reduce((sum, t) => sum + t.amount, 0);
-    
+    let total = 0;
     let servicesHtml = '';
+    
     externalTransactions.forEach(transaction => {
+        total += transaction.amount;
         servicesHtml += `
             <div class="receipt-item">
                 <span>${transaction.service}</span>
@@ -616,7 +584,7 @@ function generateExternalInvoice() {
                 <p><strong>Heure:</strong> ${new Date().toLocaleTimeString('fr-FR', {hour: '2-digit', minute:'2-digit'})}</p>
             </div>
             <hr>
-            <h4>Services externes à payer</h4>
+            <h4>Services externes</h4>
             ${servicesHtml}
             <hr>
             <div class="receipt-item">
@@ -625,8 +593,8 @@ function generateExternalInvoice() {
             </div>
             <hr>
             <div class="text-center">
-                <p>À payer à la caisse</p>
-                <p><small>Facture #${'EXT' + Date.now().toString().slice(-8)}</small></p>
+                <p>À régler à la caisse</p>
+                <p><small>Facture #${'EXT-INV' + Date.now().toString().slice(-8)}</small></p>
             </div>
         </div>
     `;
@@ -653,66 +621,28 @@ function generateExternalInvoice() {
     printWindow.print();
 }
 
-function updateTodayPatientsList() {
-    const container = document.getElementById('today-patients-list');
-    if (!container) return;
+function generatePatientIDCard() {
+    const patientId = document.getElementById('patient-fullname').value.trim() ? 
+        document.getElementById('appointment-patient-search').value.trim() : 
+        null;
     
-    const today = new Date().toISOString().split('T')[0];
-    const todayPatients = state.patients.filter(p => p.registrationDate === today);
-    
-    if (todayPatients.length === 0) {
-        container.innerHTML = '<tr><td colspan="6" class="text-center">Aucun patient enregistré aujourd\'hui</td></tr>';
+    if (!patientId) {
+        alert("Veuillez d'abord enregistrer ou rechercher un patient!");
         return;
     }
     
-    let html = '';
-    todayPatients.forEach(patient => {
-        const consultationTransaction = state.transactions.find(t => 
-            t.patientId === patient.id && 
-            t.type === 'consultation'
-        );
-        
-        const consultationType = consultationTransaction ? 
-            consultationTransaction.service.replace('Consultation: ', '') : 
-            'Service externe';
-        
-        html += `
-            <tr>
-                <td>${patient.id}</td>
-                <td>${patient.fullName}</td>
-                <td>${patient.phone}</td>
-                <td>${patient.type.charAt(0).toUpperCase() + patient.type.slice(1)}</td>
-                <td>${consultationType}</td>
-                <td>
-                    <button class="btn btn-sm btn-info" onclick="viewPatientCard('${patient.id}')">Carte</button>
-                    <button class="btn btn-sm btn-warning" onclick="viewPatientDetails('${patient.id}')">Détails</button>
-                </td>
-            </tr>
-        `;
-    });
-    
-    container.innerHTML = html;
-}
-
-function generatePatientIdCard() {
-    const fullName = document.getElementById('patient-fullname').value;
-    const birthDate = document.getElementById('patient-birthdate').value;
-    const phone = document.getElementById('patient-phone').value;
-    
-    if (!fullName || !birthDate || !phone) {
-        alert("Veuillez d'abord remplir les informations du patient!");
-        return;
-    }
-    
-    // Générer un ID temporaire pour l'affichage
-    const tempId = 'TEMP' + Date.now().toString().slice(-6);
-    
-    viewPatientCard(tempId);
+    viewPatientCard(patientId);
 }
 
 function generateMedicalCertificate() {
-    const patientId = prompt("ID du patient pour le certificat médical:");
-    if (!patientId) return;
+    const patientId = document.getElementById('patient-fullname').value.trim() ? 
+        document.getElementById('appointment-patient-search').value.trim() : 
+        null;
+    
+    if (!patientId) {
+        alert("Veuillez d'abord enregistrer ou rechercher un patient!");
+        return;
+    }
     
     const patient = state.patients.find(p => p.id === patientId);
     if (!patient) {
@@ -721,27 +651,20 @@ function generateMedicalCertificate() {
     }
     
     const consultation = state.consultations.find(c => c.patientId === patientId);
-    if (!consultation) {
-        alert("Aucune consultation trouvée pour ce patient!");
-        return;
-    }
     
-    // Remplir le certificat
-    document.getElementById('certificate-number').textContent = 'CM-' + Date.now().toString().slice(-6);
+    document.getElementById('certificate-hospital-name').textContent = document.getElementById('hospital-name')?.value || 'Hôpital Saint-Luc';
+    document.getElementById('certificate-hospital-address').textContent = document.getElementById('hospital-address')?.value || 'Port-au-Prince, Haïti';
+    document.getElementById('certificate-hospital-phone').textContent = 'Tél: ' + (document.getElementById('hospital-phone')?.value || '(509) 1234-5678');
+    document.getElementById('certificate-hospital-name-text').textContent = document.getElementById('hospital-name')?.value || 'Hôpital Saint-Luc';
     document.getElementById('certificate-patient-name').textContent = patient.fullName;
     document.getElementById('certificate-patient-dob').textContent = patient.birthDate;
     document.getElementById('certificate-patient-address').textContent = patient.address;
-    document.getElementById('certificate-consultation-date').textContent = consultation.date;
-    document.getElementById('certificate-diagnosis').textContent = consultation.diagnosis;
+    document.getElementById('certificate-consultation-date').textContent = consultation ? consultation.date : new Date().toLocaleDateString('fr-FR');
+    document.getElementById('certificate-diagnosis').innerHTML = consultation ? consultation.diagnosis : 'Examen médical standard.';
+    document.getElementById('certificate-date').textContent = new Date().toLocaleDateString('fr-FR');
+    document.getElementById('certificate-doctor').textContent = consultation ? consultation.doctor : 'Médecin';
+    document.getElementById('certificate-number').textContent = 'CM-' + Date.now().toString().slice(-6);
     
-    const today = new Date();
-    const options = { day: 'numeric', month: 'long', year: 'numeric' };
-    document.getElementById('certificate-date').textContent = today.toLocaleDateString('fr-FR', options);
-    
-    const doctor = state.users.find(u => u.username === consultation.doctor);
-    document.getElementById('certificate-doctor').textContent = doctor ? doctor.name : 'Médecin';
-    
-    // Afficher le certificat
     const container = document.getElementById('medical-certificate-container');
     if (container) {
         container.classList.remove('hidden');
@@ -753,19 +676,22 @@ function generateMedicalCertificate() {
     }
 }
 
-function viewPatientDetails(patientId) {
+function editPatientRegistration(patientId) {
     const patient = state.patients.find(p => p.id === patientId);
     if (!patient) return;
     
-    let details = `Nom: ${patient.fullName}\n`;
-    details += `ID: ${patient.id}\n`;
-    details += `Date naissance: ${patient.birthDate}\n`;
-    details += `Téléphone: ${patient.phone}\n`;
-    details += `Adresse: ${patient.address}\n`;
-    details += `Type: ${patient.type}\n`;
-    if (patient.responsible) details += `Responsable: ${patient.responsible}\n`;
-    if (patient.allergies) details += `Allergies: ${patient.allergies}\n`;
-    if (patient.notes) details += `Notes: ${patient.notes}\n`;
+    // Remplir le formulaire avec les données du patient
+    document.getElementById('patient-fullname').value = patient.fullName;
+    document.getElementById('patient-birthdate').value = patient.birthDate;
+    document.getElementById('patient-address').value = patient.address;
+    document.getElementById('patient-phone').value = patient.phone;
+    document.getElementById('patient-responsible').value = patient.responsible;
+    document.getElementById('patient-allergies').value = patient.allergies;
+    document.getElementById('patient-notes').value = patient.notes;
     
-    alert(details);
+    // Sélectionner le type de patient
+    const typeRadio = document.querySelector(`input[name="patient-type"][value="${patient.type}"]`);
+    if (typeRadio) typeRadio.checked = true;
+    
+    alert(`Modification du patient ${patient.fullName}. Modifiez les informations et soumettez le formulaire pour enregistrer.`);
 }

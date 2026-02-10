@@ -220,6 +220,9 @@ function viewPatientCard(patientId) {
     } else if (patient.sponsored) {
         typeElement.textContent += ` SPONSORISÉ (${patient.discountPercentage}%)`;
         typeElement.classList.add('vip-tag');
+    } else if (patient.hasCreditPrivilege) {
+        typeElement.textContent += ` CRÉDIT (${patient.creditLimit} Gdes)`;
+        typeElement.classList.add('credit-tag');
     }
     
     const container = document.getElementById('patient-card-container');
@@ -244,6 +247,9 @@ function checkPrivilegeExpirationAll() {
                 patient.vip = false;
                 patient.sponsored = false;
                 patient.discountPercentage = 0;
+                patient.hasCreditPrivilege = false;
+                patient.creditLimit = 0;
+                patient.creditUsed = 0;
                 patient.privilegeGrantedDate = null;
                 
                 console.log(`Privilèges expirés pour ${patient.fullName} (${patient.id})`);
@@ -267,6 +273,9 @@ function loadDemoData() {
             vip: false,
             sponsored: false,
             discountPercentage: 0,
+            hasCreditPrivilege: false,
+            creditLimit: 0,
+            creditUsed: 0,
             privilegeGrantedDate: null,
             registrationDate: new Date().toISOString().split('T')[0],
             registrationTime: '08:30',
@@ -285,6 +294,9 @@ function loadDemoData() {
             vip: true,
             sponsored: false,
             discountPercentage: 0,
+            hasCreditPrivilege: false,
+            creditLimit: 0,
+            creditUsed: 0,
             privilegeGrantedDate: new Date().toISOString(),
             registrationDate: new Date().toISOString().split('T')[0],
             registrationTime: '09:15',
@@ -303,6 +315,9 @@ function loadDemoData() {
             vip: false,
             sponsored: true,
             discountPercentage: 20,
+            hasCreditPrivilege: false,
+            creditLimit: 0,
+            creditUsed: 0,
             privilegeGrantedDate: new Date().toISOString(),
             registrationDate: new Date().toISOString().split('T')[0],
             registrationTime: '10:00',
@@ -321,9 +336,33 @@ function loadDemoData() {
             vip: false,
             sponsored: false,
             discountPercentage: 0,
+            hasCreditPrivilege: false,
+            creditLimit: 0,
+            creditUsed: 0,
             privilegeGrantedDate: null,
             registrationDate: new Date().toISOString().split('T')[0],
             registrationTime: '11:00',
+            registeredBy: 'secretary'
+        },
+        {
+            id: 'CRD0005',
+            fullName: 'Sophie Crédit',
+            birthDate: '1985-07-30',
+            address: '202 Avenue du Crédit',
+            phone: '4567-8901',
+            responsible: '',
+            type: 'normal',
+            allergies: 'Aucune',
+            notes: 'Patient avec privilège crédit',
+            vip: false,
+            sponsored: false,
+            discountPercentage: 0,
+            hasCreditPrivilege: true,
+            creditLimit: 5000,
+            creditUsed: 0,
+            privilegeGrantedDate: new Date().toISOString(),
+            registrationDate: new Date().toISOString().split('T')[0],
+            registrationTime: '14:00',
             registeredBy: 'secretary'
         }
     );
@@ -428,6 +467,19 @@ function loadDemoData() {
             createdBy: 'secretary',
             type: 'external',
             notificationSent: true
+        },
+        {
+            id: 'CRD0001',
+            patientId: 'CRD0005',
+            patientName: 'Sophie Crédit',
+            service: 'Consultation: Consultation générale',
+            amount: 500,
+            status: 'unpaid',
+            date: new Date().toISOString().split('T')[0],
+            time: '14:15',
+            createdBy: 'secretary',
+            type: 'consultation',
+            notificationSent: true
         }
     );
     
@@ -504,16 +556,20 @@ function loadDemoData() {
     
     // Données de démonstration pour les nouvelles fonctionnalités
     state.creditAccounts = {
-        'PAT0001': {
-            balance: 5000,
+        'CRD0005': {
+            balance: 0,
+            limit: 5000,
+            used: 0,
+            available: 5000,
             history: [
                 {
                     date: new Date().toISOString().split('T')[0],
-                    time: '09:00',
+                    time: '14:00',
                     amount: 5000,
                     type: 'credit_attribution',
                     by: 'admin',
-                    note: 'Crédit initial'
+                    note: 'Attribution initiale de crédit',
+                    newBalance: 5000
                 }
             ]
         }
@@ -538,8 +594,8 @@ function loadDemoData() {
         }
     };
     
-    state.patientCounter = 5;
-    state.transactionCounter = 4;
+    state.patientCounter = 6;
+    state.transactionCounter = 5;
 }
 
 // Fonction pour sauvegarder l'état localement
@@ -570,6 +626,15 @@ function loadStateFromLocalStorage() {
                 admin: { canModifyAllTransactions: true, canDeleteAllTransactions: true, canManagePettyCash: true, canGenerateAllReports: true, canManageAllUsers: true, canEditAllData: true },
                 responsible: { canModifyAllTransactions: true, canDeleteAllTransactions: false, canManagePettyCash: false, canGenerateAllReports: true, canManageAllUsers: false, canEditAllData: false }
             };
+            
+            // S'assurer que les patients ont les nouveaux champs
+            state.patients.forEach(patient => {
+                if (patient.hasCreditPrivilege === undefined) {
+                    patient.hasCreditPrivilege = false;
+                    patient.creditLimit = 0;
+                    patient.creditUsed = 0;
+                }
+            });
             
             console.log('État chargé depuis localStorage');
             return true;

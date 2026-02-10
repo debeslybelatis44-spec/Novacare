@@ -79,6 +79,7 @@ function searchCashierPatient() {
 }
 
 function displayServicesToPay(patientId) {
+    const patient = state.patients.find(p => p.id === patientId);
     const unpaidTransactions = state.transactions.filter(t => 
         t.patientId === patientId && 
         t.status === 'unpaid' &&
@@ -103,7 +104,7 @@ function displayServicesToPay(patientId) {
                     <td>${transaction.service}</td>
                     <td>${transaction.amount} Gdes</td>
                     <td>${amountUSD.toFixed(2)} $</td>
-                    <td><input type="checkbox" class="service-checkbox" data-id="${transaction.id}" checked></td>
+                    <td><input type="checkbox" class="service-checkbox" data-id="${transaction.id}" data-amount="${transaction.amount}" checked></td>
                 </tr>
             `;
         });
@@ -116,6 +117,25 @@ function displayServicesToPay(patientId) {
     const totalUSD = total / state.exchangeRate;
     document.getElementById('total-to-pay').textContent = total;
     document.getElementById('total-to-pay-usd').textContent = totalUSD.toFixed(2);
+    
+    // Si le patient a le privilège crédit, afficher l'option de paiement par crédit
+    if (patient && patient.hasCreditPrivilege) {
+        const creditAccount = state.creditAccounts[patientId];
+        if (creditAccount && creditAccount.available > 0) {
+            const creditOptionHtml = `
+                <div class="alert alert-info mt-2">
+                    <p><strong>Option de paiement par crédit disponible</strong></p>
+                    <p>Limite de crédit: ${creditAccount.limit} Gdes</p>
+                    <p>Crédit utilisé: ${creditAccount.used} Gdes</p>
+                    <p>Crédit disponible: ${creditAccount.available} Gdes</p>
+                    <button class="btn btn-warning mt-1" onclick="payWithCredit('${patientId}')">
+                        <i class="fas fa-credit-card"></i> Payer avec crédit
+                    </button>
+                </div>
+            `;
+            container.insertAdjacentHTML('afterend', creditOptionHtml);
+        }
+    }
     
     // Recalculer la monnaie
     calculateChange();
@@ -138,6 +158,7 @@ function calculateChange() {
 
 function markAsPaid() {
     const patientId = document.getElementById('cashier-patient-id').textContent;
+    const patient = state.patients.find(p => p.id === patientId);
     const selectedServices = document.querySelectorAll('.service-checkbox:checked');
     
     if (selectedServices.length === 0) {
@@ -146,6 +167,31 @@ function markAsPaid() {
     }
     
     const total = parseFloat(document.getElementById('total-to-pay').textContent);
+    
+    // Si le patient a le privilège VIP, marquer directement comme payé
+    if (patient && patient.vip) {
+        // Traiter chaque service sélectionné
+        selectedServices.forEach(checkbox => {
+            const transactionId = checkbox.dataset.id;
+            const transaction = state.transactions.find(t => t.id === transactionId);
+            
+            if (transaction) {
+                transaction.status = 'paid';
+                transaction.paymentDate = new Date().toISOString().split('T')[0];
+                transaction.paymentTime = new Date().toLocaleTimeString('fr-FR');
+                transaction.paymentAgent = state.currentUser.username;
+                transaction.paymentMethod = 'vip';
+                transaction.paymentCurrency = 'HTG';
+                transaction.amountGiven = 0;
+                transaction.amountGivenInHTG = 0;
+            }
+        });
+        
+        alert("Services marqués comme payés (VIP)!");
+        resetCashierInterface();
+        return;
+    }
+    
     const amountGiven = parseFloat(document.getElementById('amount-given').value) || 0;
     
     if (amountGiven < total) {
@@ -193,6 +239,86 @@ function markAsPaid() {
     resetCashierInterface();
     
     // Mettre à jour les statistiques d'administration
+    if (typeof updateAdminStats === 'function') updateAdminStats();
+    if (typeof updateAdminExtendedDisplay === 'function') updateAdminExtendedDisplay();
+}
+
+function payWithCredit(patientId) {
+    const patient = state.patients.find(p => p.id === patientId);
+    if (!patient || !patient.hasCreditPrivilege) {
+        alert("Le patient n'a pas le privilège crédit!");
+        return;
+    }
+    
+    const creditAccount = state.creditAccounts[patientId];
+    if (!creditAccount || creditAccount.available <= 0) {
+        alert("Crédit insuffisant!");
+        return;
+    }
+    
+    const selectedServices = document.querySelectorAll('.service-checkbox:checked');
+    if (selectedServices.length === 0) {
+        alert("Veuillez sélectionner au moins un service à payer!");
+        return;
+    }
+    
+    let totalAmount = 0;
+    selectedServices.forEach(checkbox => {
+        totalAmount += parseFloat(checkbox.dataset.amount);
+    });
+    
+    if (totalAmount > creditAccount.available) {
+        alert(`Crédit insuffisant! Total: ${totalAmount} Gdes, Crédit disponible: ${creditAccount.available} Gdes`);
+        return;
+    }
+    
+    if (!confirm(`Utiliser ${totalAmount} Gdes de crédit pour payer ${selectedServices.length} service(s)?\nCrédit disponible après paiement: ${creditAccount.available - totalAmount} Gdes`)) {
+        return;
+    }
+    
+    // Traiter chaque service sélectionné
+    selectedServices.forEach(checkbox => {
+        const transactionId = checkbox.dataset.id;
+        const transactionAmount = parseFloat(checkbox.dataset.amount);
+        const transaction = state.transactions.find(t => t.id === transactionId);
+        
+        if (transaction) {
+            transaction.status = 'paid';
+            transaction.paymentDate = new Date().toISOString().split('T')[0];
+            transaction.paymentTime = new Date().toLocaleTimeString('fr-FR');
+            transaction.paymentAgent = state.currentUser.username;
+            transaction.paymentMethod = 'credit';
+            transaction.paymentCurrency = 'HTG';
+            transaction.amountGiven = 0;
+            transaction.amountGivenInHTG = 0;
+            
+            // Mettre à jour le compte crédit
+            creditAccount.used += transactionAmount;
+            creditAccount.available -= transactionAmount;
+            patient.creditUsed = creditAccount.used;
+            
+            // Ajouter à l'historique du crédit
+            creditAccount.history.push({
+                date: new Date().toISOString().split('T')[0],
+                time: new Date().toLocaleTimeString('fr-FR'),
+                amount: -transactionAmount,
+                type: 'credit_usage',
+                by: state.currentUser.username,
+                note: `Paiement de transaction ${transactionId}: ${transaction.service}`,
+                newBalance: creditAccount.available
+            });
+            
+            // Envoyer notification de paiement
+            sendPaymentNotification(transaction);
+        }
+    });
+    
+    alert(`Paiement par crédit effectué avec succès!\nMontant utilisé: ${totalAmount} Gdes\nNouveau solde disponible: ${creditAccount.available} Gdes`);
+    
+    // Réinitialiser l'affichage
+    resetCashierInterface();
+    
+    // Mettre à jour les statistiques
     if (typeof updateAdminStats === 'function') updateAdminStats();
     if (typeof updateAdminExtendedDisplay === 'function') updateAdminExtendedDisplay();
 }

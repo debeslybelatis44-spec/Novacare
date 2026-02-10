@@ -914,10 +914,15 @@
                                     <option value="none">Aucun privilège</option>
                                     <option value="vip">VIP (gratuit)</option>
                                     <option value="sponsored">Sponsorisé (réduction %)</option>
+                                    <option value="credit">Crédit</option>
                                 </select>
                                 <div id="discount-section" class="hidden">
                                     <label>Pourcentage de réduction:</label>
                                     <input type="number" id="discount-percentage" class="form-control" placeholder="%" min="0" max="100" style="width:100px;">
+                                </div>
+                                <div id="credit-section" class="hidden">
+                                    <label>Montant crédit (Gdes):</label>
+                                    <input type="number" id="credit-amount-input" class="form-control" placeholder="Montant" min="0" style="width:150px;">
                                 </div>
                                 <button type="button" id="save-privilege" class="btn btn-success">Enregistrer</button>
                             </div>

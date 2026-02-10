@@ -17,10 +17,19 @@ function setupAdmin() {
     document.getElementById('save-privilege').addEventListener('click', savePrivilege);
     document.getElementById('privilege-type').addEventListener('change', function() {
         const discountSection = document.getElementById('discount-section');
+        const creditSection = document.getElementById('credit-section');
+        const creditAmountInput = document.getElementById('credit-amount-input');
+        
         if (this.value === 'sponsored') {
             discountSection.classList.remove('hidden');
+            creditSection.classList.add('hidden');
+        } else if (this.value === 'credit') {
+            discountSection.classList.add('hidden');
+            creditSection.classList.remove('hidden');
+            if (creditAmountInput) creditAmountInput.focus();
         } else {
             discountSection.classList.add('hidden');
+            creditSection.classList.add('hidden');
         }
     });
     
@@ -48,6 +57,9 @@ function searchAdminPatient() {
             patient.vip = false;
             patient.sponsored = false;
             patient.discountPercentage = 0;
+            patient.hasCreditPrivilege = false;
+            patient.creditLimit = 0;
+            patient.creditUsed = 0;
             patient.privilegeGrantedDate = null;
         }
     }
@@ -58,17 +70,27 @@ function searchAdminPatient() {
     const privilegeSelect = document.getElementById('privilege-type');
     const discountSection = document.getElementById('discount-section');
     const discountInput = document.getElementById('discount-percentage');
+    const creditSection = document.getElementById('credit-section');
+    const creditAmountInput = document.getElementById('credit-amount-input');
     
     if (patient.vip) {
         privilegeSelect.value = 'vip';
         discountSection.classList.add('hidden');
+        creditSection.classList.add('hidden');
     } else if (patient.sponsored) {
         privilegeSelect.value = 'sponsored';
         discountSection.classList.remove('hidden');
-        discountInput.value = patient.discountPercentage;
+        discountInput.value = patient.discountPercentage || 0;
+        creditSection.classList.add('hidden');
+    } else if (patient.hasCreditPrivilege) {
+        privilegeSelect.value = 'credit';
+        discountSection.classList.add('hidden');
+        creditSection.classList.remove('hidden');
+        if (creditAmountInput) creditAmountInput.value = patient.creditLimit || 0;
     } else {
         privilegeSelect.value = 'none';
         discountSection.classList.add('hidden');
+        creditSection.classList.add('hidden');
     }
     
     const history = state.transactions.filter(t => t.patientId === patient.id);
@@ -104,17 +126,23 @@ function savePrivilege() {
     
     const privilegeType = document.getElementById('privilege-type').value;
     const discountPercentage = parseInt(document.getElementById('discount-percentage').value) || 0;
+    const creditAmount = parseFloat(document.getElementById('credit-amount-input').value) || 0;
     
     patient.vip = false;
     patient.sponsored = false;
     patient.discountPercentage = 0;
+    patient.hasCreditPrivilege = false;
+    patient.creditLimit = 0;
+    patient.creditUsed = 0;
     patient.privilegeGrantedDate = null;
     
     if (privilegeType === 'vip') {
         patient.vip = true;
         patient.privilegeGrantedDate = new Date().toISOString();
+        
+        // Marquer toutes les transactions impayées comme payées VIP
         state.transactions.forEach(t => {
-            if (t.patientId === patientId && t.status === 'unpaid') {
+            if (t.patientId === patientId && t.status === 'unpaid' && !t.isCredit) {
                 t.status = 'paid';
                 t.paymentMethod = 'vip';
                 t.paymentDate = new Date().toISOString().split('T')[0];
@@ -123,11 +151,43 @@ function savePrivilege() {
             }
         });
         alert("Patient marqué comme VIP (services gratuits)");
+        
     } else if (privilegeType === 'sponsored') {
         patient.sponsored = true;
         patient.discountPercentage = discountPercentage;
         patient.privilegeGrantedDate = new Date().toISOString();
+        
+        // Appliquer la réduction aux transactions impayées
+        state.transactions.forEach(t => {
+            if (t.patientId === patientId && t.status === 'unpaid' && !t.isCredit) {
+                const originalAmount = t.originalAmount || t.amount;
+                t.amount = originalAmount * (1 - discountPercentage / 100);
+            }
+        });
         alert(`Patient marqué comme sponsorisé avec ${discountPercentage}% de réduction`);
+        
+    } else if (privilegeType === 'credit') {
+        patient.hasCreditPrivilege = true;
+        patient.creditLimit = creditAmount;
+        patient.creditUsed = 0;
+        patient.privilegeGrantedDate = new Date().toISOString();
+        
+        // Initialiser le compte crédit si nécessaire
+        if (!state.creditAccounts[patientId]) {
+            state.creditAccounts[patientId] = {
+                balance: 0,
+                limit: creditAmount,
+                used: 0,
+                available: creditAmount,
+                history: []
+            };
+        } else {
+            state.creditAccounts[patientId].limit = creditAmount;
+            state.creditAccounts[patientId].available = creditAmount - state.creditAccounts[patientId].used;
+        }
+        
+        alert(`Patient a reçu un privilège crédit de ${creditAmount} Gdes`);
+        
     } else {
         alert("Privilèges retirés du patient");
     }
@@ -163,7 +223,7 @@ function updateAdminStats() {
     document.getElementById('admin-external-amount').textContent = externalAmount + ' Gdes (' + externalAmountUSD.toFixed(2) + ' $)';
     
     const totalRevenue = state.transactions
-        .filter(t => t.status === 'paid' && !t.isCredit)
+        .filter(t => t.status === 'paid' && !t.isCredit && t.paymentMethod !== 'credit')
         .reduce((sum, t) => sum + t.amount, 0);
     const totalRevenueUSD = totalRevenue / exchangeRate;
     document.getElementById('admin-total-revenue').textContent = totalRevenue + ' Gdes (' + totalRevenueUSD.toFixed(2) + ' $)';
@@ -317,7 +377,7 @@ function updateAdminExtendedDisplay() {
     updateUserTransactionTotals();
 }
 
-// Ajouter un crédit à un patient
+// Ajouter un crédit à un patient (fonction pour ajouter du crédit manuellement)
 function addPatientCredit() {
     const patientId = document.getElementById('admin-patient-search').value.trim();
     const creditAmount = parseFloat(document.getElementById('credit-amount').value);
@@ -334,44 +394,40 @@ function addPatientCredit() {
         return;
     }
     
-    // Initialiser le compte crédit si nécessaire
+    // Vérifier si le patient a le privilège crédit
+    if (!patient.hasCreditPrivilege) {
+        alert("Le patient n'a pas le privilège crédit! Veuillez d'abord lui attribuer ce privilège.");
+        return;
+    }
+    
+    // Augmenter la limite de crédit
+    patient.creditLimit = (patient.creditLimit || 0) + creditAmount;
+    
+    // Mettre à jour le compte crédit
     if (!state.creditAccounts[patientId]) {
         state.creditAccounts[patientId] = {
             balance: 0,
+            limit: patient.creditLimit,
+            used: patient.creditUsed || 0,
+            available: patient.creditLimit - (patient.creditUsed || 0),
             history: []
         };
+    } else {
+        state.creditAccounts[patientId].limit += creditAmount;
+        state.creditAccounts[patientId].available = state.creditAccounts[patientId].limit - state.creditAccounts[patientId].used;
     }
     
-    // Ajouter le crédit
-    state.creditAccounts[patientId].balance += creditAmount;
+    // Ajouter à l'historique
     state.creditAccounts[patientId].history.push({
         date: new Date().toISOString().split('T')[0],
         time: new Date().toLocaleTimeString('fr-FR'),
         amount: creditAmount,
-        type: 'credit_attribution',
+        type: 'credit_augmentation',
         by: state.currentUser.username,
-        note: creditNote || 'Crédit attribué'
+        note: creditNote || 'Crédit ajouté manuellement'
     });
     
-    // Enregistrer la transaction (mais ne pas l'ajouter au revenu total)
-    const creditTransaction = {
-        id: 'CREDIT' + Date.now(),
-        patientId: patientId,
-        patientName: patient.fullName,
-        service: `Crédit attribué: ${creditNote}`,
-        amount: creditAmount,
-        status: 'credited',
-        date: new Date().toISOString().split('T')[0],
-        time: new Date().toLocaleTimeString('fr-FR'),
-        createdBy: state.currentUser.username,
-        type: 'credit',
-        paymentMethod: 'credit',
-        isCredit: true
-    };
-    
-    state.transactions.push(creditTransaction);
-    
-    alert(`Crédit de ${creditAmount} Gdes attribué au patient ${patient.fullName}`);
+    alert(`Crédit de ${creditAmount} Gdes ajouté au patient ${patient.fullName}. Nouvelle limite: ${patient.creditLimit} Gdes`);
     
     // Réinitialiser le formulaire
     document.getElementById('credit-amount').value = '';
@@ -431,7 +487,7 @@ function viewCreditHistory(patientId = null) {
     
     const creditAccount = state.creditAccounts[patientId];
     if (!creditAccount) {
-        alert("Aucun crédit pour ce patient!");
+        alert("Aucun compte crédit pour ce patient!");
         return;
     }
     
@@ -440,7 +496,11 @@ function viewCreditHistory(patientId = null) {
     modal.innerHTML = `
         <div class="transaction-details-content">
             <h3>Historique des crédits - ${patientId}</h3>
-            <p>Solde actuel: <strong>${creditAccount.balance} Gdes</strong></p>
+            <div class="credit-summary">
+                <p><strong>Limite de crédit:</strong> ${creditAccount.limit} Gdes</p>
+                <p><strong>Crédit utilisé:</strong> ${creditAccount.used} Gdes</p>
+                <p><strong>Crédit disponible:</strong> ${creditAccount.available} Gdes</p>
+            </div>
             <div class="table-container">
                 <table>
                     <thead>
@@ -450,16 +510,20 @@ function viewCreditHistory(patientId = null) {
                             <th>Type</th>
                             <th>Par</th>
                             <th>Note</th>
+                            <th>Solde après</th>
                         </tr>
                     </thead>
                     <tbody>
                         ${creditAccount.history.map(record => `
                             <tr>
                                 <td>${record.date} ${record.time}</td>
-                                <td>${record.amount} Gdes</td>
-                                <td>${record.type}</td>
+                                <td>${record.amount > 0 ? '+' : ''}${record.amount} Gdes</td>
+                                <td>${record.type === 'credit_attribution' ? 'Attribution' : 
+                                      record.type === 'credit_usage' ? 'Utilisation' : 
+                                      record.type === 'credit_augmentation' ? 'Augmentation' : record.type}</td>
                                 <td>${record.by}</td>
                                 <td>${record.note || ''}</td>
+                                <td>${record.newBalance || '-'}</td>
                             </tr>
                         `).join('')}
                     </tbody>
@@ -636,11 +700,19 @@ function generateFinancialReport(startDate, endDate) {
         byServiceType[t.type] = (byServiceType[t.type] || 0) + t.amount;
     });
     
+    // Calculer le total des crédits utilisés
+    let totalCreditUsed = 0;
+    for (const patientId in state.creditAccounts) {
+        const account = state.creditAccounts[patientId];
+        totalCreditUsed += account.used || 0;
+    }
+    
     return {
         period: startDate && endDate ? `${startDate} au ${endDate}` : 'Toute période',
         totalRevenue,
         totalUnpaid,
         totalCredit,
+        totalCreditUsed,
         transactionCount: filteredTransactions.length,
         paidCount: paidTransactions.length,
         unpaidCount: unpaidTransactions.length,
@@ -729,6 +801,7 @@ function displayReport(title, data) {
                 <p>Revenus totaux: <strong>${data.totalRevenue.toLocaleString()} Gdes</strong></p>
                 <p>Montants impayés: <strong>${data.totalUnpaid.toLocaleString()} Gdes</strong></p>
                 <p>Crédits attribués: <strong>${data.totalCredit.toLocaleString()} Gdes</strong></p>
+                <p>Crédits utilisés: <strong>${data.totalCreditUsed?.toLocaleString() || '0'} Gdes</strong></p>
                 <p>Transactions: ${data.transactionCount} (Payées: ${data.paidCount}, Impayées: ${data.unpaidCount})</p>
                 <p>Caisse principale: <strong>${data.mainCashBalance.toLocaleString()} Gdes</strong></p>
                 <p>Petite caisse: <strong>${data.pettyCashBalance.toLocaleString()} Gdes</strong></p>
@@ -1089,6 +1162,7 @@ function exportReportToCSV() {
             const financialData = generateFinancialReport(startDate, endDate);
             rows.push(["Revenus totaux", financialData.totalRevenue]);
             rows.push(["Impayés totaux", financialData.totalUnpaid]);
+            rows.push(["Crédits utilisés", financialData.totalCreditUsed || 0]);
             rows.push(["Caisse principale", financialData.mainCashBalance]);
             rows.push(["Petite caisse", financialData.pettyCashBalance]);
             break;
@@ -1137,42 +1211,51 @@ function printReport() {
 
 // Mettre à jour l'affichage du crédit dans la section patient
 function updateCreditDisplay(patientId) {
+    const patient = state.patients.find(p => p.id === patientId);
     const creditAccount = state.creditAccounts[patientId];
     const container = document.getElementById('patient-credit-display');
     
     if (!container) return;
     
-    if (creditAccount) {
+    if (patient && patient.hasCreditPrivilege && creditAccount) {
         container.innerHTML = `
-            <div class="credit-info">
-                <h5>Crédit disponible</h5>
-                <p><strong>${creditAccount.balance} Gdes</strong></p>
-                <button class="btn btn-info btn-sm" onclick="viewCreditHistory('${patientId}')">
-                    Voir l'historique
-                </button>
-                <button class="btn btn-warning btn-sm" onclick="usePatientCredit('${patientId}')">
-                    Utiliser le crédit
-                </button>
+            <div class="credit-info card">
+                <h5>Compte Crédit</h5>
+                <p><strong>Limite de crédit:</strong> ${creditAccount.limit} Gdes</p>
+                <p><strong>Crédit utilisé:</strong> ${creditAccount.used} Gdes</p>
+                <p><strong>Crédit disponible:</strong> ${creditAccount.available} Gdes</p>
+                <div class="mt-2">
+                    <button class="btn btn-info btn-sm" onclick="viewCreditHistory('${patientId}')">
+                        Voir l'historique
+                    </button>
+                    <button class="btn btn-warning btn-sm" onclick="usePatientCreditPrompt('${patientId}')">
+                        Utiliser le crédit
+                    </button>
+                </div>
             </div>
         `;
         container.classList.remove('hidden');
     } else {
-        container.innerHTML = '<p>Aucun crédit disponible</p>';
+        container.innerHTML = '<p>Aucun compte crédit disponible</p>';
         container.classList.remove('hidden');
     }
 }
 
 // Utiliser le crédit d'un patient
-function usePatientCredit(patientId) {
+function usePatientCreditPrompt(patientId = null) {
+    if (!patientId) {
+        patientId = document.getElementById('admin-patient-search').value.trim();
+    }
+    
     const creditAccount = state.creditAccounts[patientId];
-    if (!creditAccount || creditAccount.balance <= 0) {
-        alert("Aucun crédit disponible!");
+    if (!creditAccount || creditAccount.available <= 0) {
+        alert("Crédit insuffisant ou aucun compte crédit disponible!");
         return;
     }
     
-    const amountToUse = parseFloat(prompt(`Crédit disponible: ${creditAccount.balance} Gdes\nMontant à utiliser:`, creditAccount.balance));
+    const amountToUse = parseFloat(prompt(`Crédit disponible: ${creditAccount.available} Gdes\nMontant à utiliser (Gdes):`, creditAccount.available));
     
-    if (!amountToUse || amountToUse <= 0 || amountToUse > creditAccount.balance) {
+    if (!amountToUse || amountToUse <= 0 || amountToUse > creditAccount.available) {
         alert("Montant invalide!");
         return;
     }
@@ -1202,10 +1285,15 @@ function usePatientCredit(patientId) {
             transaction.status = 'paid';
             transaction.paymentMethod = 'credit';
             transaction.paymentDate = new Date().toISOString().split('T')[0];
-            transaction.paymentTime = new Date().toLocaleTimeString('fr-FR');
+            transaction.paymentTime = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+            transaction.paymentAgent = state.currentUser.username;
         } else {
             transaction.status = 'partial';
         }
+        
+        // Mettre à jour le compte crédit
+        creditAccount.used += amountToPay;
+        creditAccount.available -= amountToPay;
         
         // Ajouter à l'historique du crédit
         creditAccount.history.push({
@@ -1214,14 +1302,18 @@ function usePatientCredit(patientId) {
             amount: -amountToPay,
             type: 'credit_usage',
             by: state.currentUser.username,
-            note: `Paiement de transaction ${transaction.id}`
+            note: `Paiement de transaction ${transaction.id}: ${transaction.service}`,
+            newBalance: creditAccount.available
         });
     }
     
-    // Mettre à jour le solde du crédit
-    creditAccount.balance -= (amountToUse - remainingCredit);
+    // Mettre à jour le patient
+    const patient = state.patients.find(p => p.id === patientId);
+    if (patient) {
+        patient.creditUsed = creditAccount.used;
+    }
     
-    alert(`Crédit utilisé: ${amountToUse - remainingCredit} Gdes\nNouveau solde: ${creditAccount.balance} Gdes`);
+    alert(`Crédit utilisé: ${amountToUse - remainingCredit} Gdes\nNouveau solde disponible: ${creditAccount.available} Gdes`);
     searchAdminPatient();
 }
 
@@ -1233,12 +1325,13 @@ function setupSettings() {
     document.getElementById('hospital-logo').addEventListener('change', handleLogoUpload);
     document.getElementById('save-hospital-info-btn').addEventListener('click', saveHospitalInfo);
     
+    // Consultation Types
     document.getElementById('add-consultation-type').addEventListener('click', () => {
-        const name = document.getElementById('new-consultation-type-name').value;
+        const name = document.getElementById('new-consultation-type-name').value.trim();
         const price = parseFloat(document.getElementById('new-consultation-type-price').value);
-        const description = document.getElementById('new-consultation-type-description').value;
+        const description = document.getElementById('new-consultation-type-description').value.trim();
         
-        if (!name || isNaN(price)) {
+        if (!name || isNaN(price) || price < 0) {
             alert("Veuillez entrer un nom et un prix valides!");
             return;
         }
@@ -1257,16 +1350,18 @@ function setupSettings() {
         document.getElementById('new-consultation-type-name').value = '';
         document.getElementById('new-consultation-type-price').value = '';
         document.getElementById('new-consultation-type-description').value = '';
+        alert("Type de consultation ajouté avec succès!");
     });
     
+    // Vital Types
     document.getElementById('add-vital-type').addEventListener('click', () => {
-        const name = document.getElementById('new-vital-name').value;
-        const unit = document.getElementById('new-vital-unit').value;
+        const name = document.getElementById('new-vital-name').value.trim();
+        const unit = document.getElementById('new-vital-unit').value.trim();
         const min = parseFloat(document.getElementById('new-vital-min').value);
         const max = parseFloat(document.getElementById('new-vital-max').value);
         
-        if (!name || !unit || isNaN(min) || isNaN(max)) {
-            alert("Veuillez remplir tous les champs correctement!");
+        if (!name || !unit || isNaN(min) || isNaN(max) || min >= max) {
+            alert("Veuillez remplir tous les champs correctement! La valeur min doit être inférieure à la valeur max.");
             return;
         }
         
@@ -1281,14 +1376,21 @@ function setupSettings() {
         
         state.vitalTypes.push(newVital);
         updateSettingsDisplay();
+        
+        document.getElementById('new-vital-name').value = '';
+        document.getElementById('new-vital-unit').value = '';
+        document.getElementById('new-vital-min').value = '';
+        document.getElementById('new-vital-max').value = '';
+        alert("Signe vital ajouté avec succès!");
     });
     
+    // Lab Analysis Types
     document.getElementById('add-lab-analysis-type').addEventListener('click', () => {
-        const name = document.getElementById('new-lab-analysis-name').value;
+        const name = document.getElementById('new-lab-analysis-name').value.trim();
         const price = parseFloat(document.getElementById('new-lab-analysis-price').value);
         const type = document.getElementById('new-lab-analysis-type').value;
         
-        if (!name || isNaN(price)) {
+        if (!name || isNaN(price) || price < 0) {
             alert("Veuillez entrer un nom et un prix valides!");
             return;
         }
@@ -1303,13 +1405,18 @@ function setupSettings() {
         
         state.labAnalysisTypes.push(newAnalysis);
         updateSettingsDisplay();
+        
+        document.getElementById('new-lab-analysis-name').value = '';
+        document.getElementById('new-lab-analysis-price').value = '';
+        alert("Type d'analyse ajouté avec succès!");
     });
     
+    // External Service Types
     document.getElementById('add-external-service-type').addEventListener('click', () => {
-        const name = document.getElementById('new-external-service-type-name').value;
+        const name = document.getElementById('new-external-service-type-name').value.trim();
         const price = parseFloat(document.getElementById('new-external-service-type-price').value);
         
-        if (!name || isNaN(price)) {
+        if (!name || isNaN(price) || price < 0) {
             alert("Veuillez entrer un nom et un prix valides!");
             return;
         }
@@ -1323,18 +1430,28 @@ function setupSettings() {
         
         state.externalServiceTypes.push(newService);
         updateSettingsDisplay();
-        updateExternalServicesSelect();
-        updateExternalServicesOptions();
+        
+        document.getElementById('new-external-service-type-name').value = '';
+        document.getElementById('new-external-service-type-price').value = '';
+        alert("Service externe ajouté avec succès!");
     });
     
+    // Users
     document.getElementById('add-user').addEventListener('click', () => {
-        const name = document.getElementById('new-user-name').value;
+        const name = document.getElementById('new-user-name').value.trim();
         const role = document.getElementById('new-user-role').value;
-        const username = document.getElementById('new-user-username').value;
+        const username = document.getElementById('new-user-username').value.trim();
         const password = document.getElementById('new-user-password').value;
         
         if (!name || !role || !username || !password) {
             alert("Veuillez remplir tous les champs!");
+            return;
+        }
+        
+        // Vérifier si l'utilisateur existe déjà
+        const existingUser = state.users.find(u => u.username === username);
+        if (existingUser) {
+            alert("Ce nom d'utilisateur existe déjà!");
             return;
         }
         
@@ -1355,6 +1472,8 @@ function setupSettings() {
         document.getElementById('new-user-role').value = '';
         document.getElementById('new-user-username').value = '';
         document.getElementById('new-user-password').value = '';
+        
+        alert("Utilisateur ajouté avec succès!");
     });
 }
 
@@ -1362,34 +1481,68 @@ function handleLogoUpload(event) {
     const file = event.target.files[0];
     if (!file) return;
     
+    // Vérifier la taille du fichier (max 2MB)
+    if (file.size > 2 * 1024 * 1024) {
+        alert("Le fichier est trop volumineux. Taille maximale: 2MB");
+        return;
+    }
+    
     const reader = new FileReader();
     reader.onload = function(e) {
         state.hospitalLogo = e.target.result;
         document.getElementById('logo-preview').src = e.target.result;
         document.getElementById('logo-preview').style.display = 'block';
+        updateLogoDisplay();
+    };
+    reader.onerror = function() {
+        alert("Erreur lors de la lecture du fichier");
     };
     reader.readAsDataURL(file);
 }
 
 function saveHospitalInfo() {
-    const name = document.getElementById('hospital-name').value;
-    const address = document.getElementById('hospital-address').value;
-    const phone = document.getElementById('hospital-phone').value;
+    const name = document.getElementById('hospital-name').value.trim();
+    const address = document.getElementById('hospital-address').value.trim();
+    const phone = document.getElementById('hospital-phone').value.trim();
     
+    if (!name) {
+        alert("Veuillez entrer le nom de l'hôpital!");
+        return;
+    }
+    
+    // Mettre à jour les en-têtes
     document.getElementById('hospital-name-header').textContent = name;
     document.getElementById('hospital-address-header').textContent = address;
     document.getElementById('hospital-name-login').textContent = name;
+    document.getElementById('certificate-hospital-name').textContent = name;
+    document.getElementById('certificate-hospital-name-text').textContent = name;
+    document.getElementById('invoice-hospital-name').textContent = name;
+    document.getElementById('card-hospital-name').textContent = name;
     
-    alert("Informations de l'hôpital enregistrées!");
+    if (address) {
+        document.getElementById('hospital-address-header').textContent = address;
+        document.getElementById('certificate-hospital-address').textContent = address;
+        document.getElementById('invoice-hospital-address').textContent = address;
+        document.getElementById('card-hospital-address').textContent = address;
+    }
+    
+    if (phone) {
+        document.getElementById('hospital-phone').value = phone;
+        document.getElementById('certificate-hospital-phone').textContent = `Tél: ${phone}`;
+        document.getElementById('invoice-hospital-phone').textContent = `Tél: ${phone}`;
+    }
+    
+    alert("Informations de l'hôpital enregistrées avec succès!");
+    saveStateToLocalStorage();
 }
 
 function addMedicationFromSettings() {
-    const name = document.getElementById('new-medication-name').value.trim();
-    const price = parseFloat(document.getElementById('new-medication-price').value);
-    const quantity = parseInt(document.getElementById('new-medication-quantity').value);
-    const alertThreshold = parseInt(document.getElementById('new-medication-alert').value);
+    const name = document.getElementById('new-medication-name-settings').value.trim();
+    const price = parseFloat(document.getElementById('new-medication-price-settings').value);
+    const quantity = parseInt(document.getElementById('new-medication-quantity-settings').value);
+    const alertThreshold = parseInt(document.getElementById('new-medication-alert-settings').value);
     
-    if (!name || isNaN(price) || isNaN(quantity) || isNaN(alertThreshold)) {
+    if (!name || isNaN(price) || price < 0 || isNaN(quantity) || quantity < 0 || isNaN(alertThreshold) || alertThreshold < 0) {
         alert("Veuillez remplir tous les champs correctement!");
         return;
     }
@@ -1408,18 +1561,21 @@ function addMedicationFromSettings() {
     
     state.medicationStock.push(newMed);
     
-    document.getElementById('new-medication-name').value = '';
-    document.getElementById('new-medication-price').value = '';
-    document.getElementById('new-medication-quantity').value = '';
-    document.getElementById('new-medication-alert').value = '';
+    document.getElementById('new-medication-name-settings').value = '';
+    document.getElementById('new-medication-price-settings').value = '';
+    document.getElementById('new-medication-quantity-settings').value = '';
+    document.getElementById('new-medication-alert-settings').value = '';
     
-    if (typeof updateMedicationStock === 'function') updateMedicationStock();
     updateMedicationsSettingsList();
+    if (typeof updateMedicationStock === 'function') updateMedicationStock();
     alert("Médicament ajouté avec succès!");
+    saveStateToLocalStorage();
 }
 
 function updateMedicationsSettingsList() {
     const container = document.getElementById('medications-settings-list');
+    if (!container) return;
+    
     let html = '';
     
     state.medicationStock.forEach(med => {
@@ -1442,100 +1598,115 @@ function updateMedicationsSettingsList() {
 }
 
 function deleteMedicationSettings(medId) {
-    if (confirm("Supprimer ce médicament?")) {
+    if (confirm("Supprimer ce médicament? Cette action est irréversible.")) {
         state.medicationStock = state.medicationStock.filter(m => m.id !== medId);
-        if (typeof updateMedicationStock === 'function') updateMedicationStock();
         updateMedicationsSettingsList();
+        if (typeof updateMedicationStock === 'function') updateMedicationStock();
+        alert("Médicament supprimé avec succès!");
+        saveStateToLocalStorage();
     }
 }
 
 function updateSettingsDisplay() {
+    // Consultation Types
     const consultationList = document.getElementById('consultation-types-list');
-    let html = '<table class="table-container"><thead><tr><th>Nom</th><th>Prix</th><th>Description</th><th>Actif</th><th>Actions</th></tr></thead><tbody>';
+    if (consultationList) {
+        let html = '<table class="table-container"><thead><tr><th>Nom</th><th>Prix</th><th>Description</th><th>Actif</th><th>Actions</th></tr></thead><tbody>';
+        
+        state.consultationTypes.forEach(type => {
+            html += `
+                <tr>
+                    <td>${type.name}</td>
+                    <td><input type="number" class="form-control consultation-price-input" data-id="${type.id}" value="${type.price}" style="width:100px;"></td>
+                    <td><input type="text" class="form-control consultation-desc-input" data-id="${type.id}" value="${type.description || ''}" style="width:200px;"></td>
+                    <td><input type="checkbox" ${type.active ? 'checked' : ''} onchange="toggleConsultationType(${type.id}, this.checked)"></td>
+                    <td>
+                        <button class="btn btn-sm btn-success" onclick="saveConsultationType(${type.id})">Enregistrer</button>
+                        <button class="btn btn-sm btn-danger" onclick="deleteConsultationType(${type.id})">Supprimer</button>
+                    </td>
+                </tr>
+            `;
+        });
+        
+        html += '</tbody></table>';
+        consultationList.innerHTML = html;
+    }
     
-    state.consultationTypes.forEach(type => {
-        html += `
-            <tr>
-                <td>${type.name}</td>
-                <td><input type="number" class="form-control consultation-price-input" data-id="${type.id}" value="${type.price}" style="width:100px;"></td>
-                <td><input type="text" class="form-control consultation-desc-input" data-id="${type.id}" value="${type.description}" style="width:200px;"></td>
-                <td><input type="checkbox" ${type.active ? 'checked' : ''} onchange="toggleConsultationType(${type.id}, this.checked)"></td>
-                <td>
-                    <button class="btn btn-sm btn-success" onclick="saveConsultationType(${type.id})">Enregistrer</button>
-                    <button class="btn btn-sm btn-danger" onclick="deleteConsultationType(${type.id})">Supprimer</button>
-                </td>
-            </tr>
-        `;
-    });
-    
-    html += '</tbody></table>';
-    consultationList.innerHTML = html;
-    
+    // Vital Types
     const vitalsList = document.getElementById('vitals-types-list');
-    html = '<table class="table-container"><thead><tr><th>Nom</th><th>Unité</th><th>Valeur min</th><th>Valeur max</th><th>Actif</th><th>Actions</th></tr></thead><tbody>';
+    if (vitalsList) {
+        html = '<table class="table-container"><thead><tr><th>Nom</th><th>Unité</th><th>Valeur min</th><th>Valeur max</th><th>Actif</th><th>Actions</th></tr></thead><tbody>';
+        
+        state.vitalTypes.forEach(vital => {
+            html += `
+                <tr>
+                    <td>${vital.name}</td>
+                    <td>${vital.unit}</td>
+                    <td><input type="number" class="form-control vital-min-input" data-id="${vital.id}" value="${vital.min}" style="width:80px;"></td>
+                    <td><input type="number" class="form-control vital-max-input" data-id="${vital.id}" value="${vital.max}" style="width:80px;"></td>
+                    <td><input type="checkbox" ${vital.active ? 'checked' : ''} onchange="toggleVitalType(${vital.id}, this.checked)"></td>
+                    <td>
+                        <button class="btn btn-sm btn-success" onclick="saveVitalType(${vital.id})">Enregistrer</button>
+                        <button class="btn btn-sm btn-danger" onclick="deleteVitalType(${vital.id})">Supprimer</button>
+                    </td>
+                </tr>
+            `;
+        });
+        
+        html += '</tbody></table>';
+        vitalsList.innerHTML = html;
+    }
     
-    state.vitalTypes.forEach(vital => {
-        html += `
-            <tr>
-                <td>${vital.name}</td>
-                <td>${vital.unit}</td>
-                <td>${vital.min}</td>
-                <td>${vital.max}</td>
-                <td><input type="checkbox" ${vital.active ? 'checked' : ''} onchange="toggleVitalType(${vital.id}, this.checked)"></td>
-                <td>
-                    <button class="btn btn-sm btn-warning" onclick="editVitalType(${vital.id})">Modifier</button>
-                    <button class="btn btn-sm btn-danger" onclick="deleteVitalType(${vital.id})">Supprimer</button>
-                </td>
-            </tr>
-        `;
-    });
-    
-    html += '</tbody></table>';
-    vitalsList.innerHTML = html;
-    
+    // Lab Analysis Types
     const labList = document.getElementById('lab-analyses-types-list');
-    html = '<table class="table-container"><thead><tr><th>Nom</th><th>Prix</th><th>Type résultat</th><th>Actif</th><th>Actions</th></tr></thead><tbody>';
+    if (labList) {
+        html = '<table class="table-container"><thead><tr><th>Nom</th><th>Prix</th><th>Type résultat</th><th>Actif</th><th>Actions</th></tr></thead><tbody>';
+        
+        state.labAnalysisTypes.forEach(analysis => {
+            html += `
+                <tr>
+                    <td>${analysis.name}</td>
+                    <td><input type="number" class="form-control analysis-price-input" data-id="${analysis.id}" value="${analysis.price}" style="width:100px;"></td>
+                    <td>${analysis.resultType === 'text' ? 'Texte' : 'Image'}</td>
+                    <td><input type="checkbox" ${analysis.active ? 'checked' : ''} onchange="toggleLabAnalysisType(${analysis.id}, this.checked)"></td>
+                    <td>
+                        <button class="btn btn-sm btn-success" onclick="saveLabAnalysisType(${analysis.id})">Enregistrer</button>
+                        <button class="btn btn-sm btn-danger" onclick="deleteLabAnalysisType(${analysis.id})">Supprimer</button>
+                    </td>
+                </tr>
+            `;
+        });
+        
+        html += '</tbody></table>';
+        labList.innerHTML = html;
+    }
     
-    state.labAnalysisTypes.forEach(analysis => {
-        html += `
-            <tr>
-                <td>${analysis.name}</td>
-                <td><input type="number" class="form-control analysis-price-input" data-id="${analysis.id}" value="${analysis.price}" style="width:100px;"></td>
-                <td>${analysis.resultType === 'text' ? 'Texte' : 'Image'}</td>
-                <td><input type="checkbox" ${analysis.active ? 'checked' : ''} onchange="toggleLabAnalysisType(${analysis.id}, this.checked)"></td>
-                <td>
-                    <button class="btn btn-sm btn-success" onclick="saveLabAnalysisType(${analysis.id})">Enregistrer</button>
-                    <button class="btn btn-sm btn-danger" onclick="deleteLabAnalysisType(${analysis.id})">Supprimer</button>
-                </td>
-            </tr>
-        `;
-    });
-    
-    html += '</tbody></table>';
-    labList.innerHTML = html;
-    
+    // External Service Types
     const externalList = document.getElementById('external-services-types-list');
-    html = '<table class="table-container"><thead><tr><th>Nom</th><th>Prix</th><th>Actif</th><th>Actions</th></tr></thead><tbody>';
-    
-    state.externalServiceTypes.forEach(service => {
-        html += `
-            <tr>
-                <td>${service.name}</td>
-                <td><input type="number" class="form-control external-price-input" data-id="${service.id}" value="${service.price}" style="width:100px;"></td>
-                <td><input type="checkbox" ${service.active ? 'checked' : ''} onchange="toggleExternalServiceType(${service.id}, this.checked)"></td>
-                <td>
-                    <button class="btn btn-sm btn-success" onclick="saveExternalServiceType(${service.id})">Enregistrer</button>
-                    <button class="btn btn-sm btn-danger" onclick="deleteExternalServiceType(${service.id})">Supprimer</button>
-                </td>
-            </tr>
-        `;
-    });
-    
-    html += '</tbody></table>';
-    externalList.innerHTML = html;
+    if (externalList) {
+        html = '<table class="table-container"><thead><tr><th>Nom</th><th>Prix</th><th>Actif</th><th>Actions</th></tr></thead><tbody>';
+        
+        state.externalServiceTypes.forEach(service => {
+            html += `
+                <tr>
+                    <td>${service.name}</td>
+                    <td><input type="number" class="form-control external-price-input" data-id="${service.id}" value="${service.price}" style="width:100px;"></td>
+                    <td><input type="checkbox" ${service.active ? 'checked' : ''} onchange="toggleExternalServiceType(${service.id}, this.checked)"></td>
+                    <td>
+                        <button class="btn btn-sm btn-success" onclick="saveExternalServiceType(${service.id})">Enregistrer</button>
+                        <button class="btn btn-sm btn-danger" onclick="deleteExternalServiceType(${service.id})">Supprimer</button>
+                    </td>
+                </tr>
+            `;
+        });
+        
+        html += '</tbody></table>';
+        externalList.innerHTML = html;
+    }
     
     updateUsersList();
     
+    // Mettre à jour les selects dans d'autres modules
     if (typeof updateConsultationTypesSelect === 'function') updateConsultationTypesSelect();
     if (typeof updateVitalsInputs === 'function') updateVitalsInputs();
     if (typeof updateLabAnalysesSelect === 'function') updateLabAnalysesSelect();
@@ -1547,6 +1718,8 @@ function updateSettingsDisplay() {
 
 function updateUsersList() {
     const container = document.getElementById('users-list');
+    if (!container) return;
+    
     let html = '';
     
     state.users.forEach(user => {
@@ -1580,6 +1753,7 @@ function saveConsultationType(id) {
     alert("Type de consultation enregistré!");
     if (typeof updateConsultationTypesSelect === 'function') updateConsultationTypesSelect();
     if (typeof updateDoctorConsultationTypes === 'function') updateDoctorConsultationTypes();
+    saveStateToLocalStorage();
 }
 
 function toggleConsultationType(id, active) {
@@ -1588,27 +1762,49 @@ function toggleConsultationType(id, active) {
         type.active = active;
         if (typeof updateConsultationTypesSelect === 'function') updateConsultationTypesSelect();
         if (typeof updateDoctorConsultationTypes === 'function') updateDoctorConsultationTypes();
+        saveStateToLocalStorage();
     }
 }
 
 function deleteConsultationType(id) {
-    if (confirm("Supprimer ce type de consultation?")) {
+    if (confirm("Supprimer ce type de consultation? Cette action est irréversible.")) {
         state.consultationTypes = state.consultationTypes.filter(t => t.id !== id);
         updateSettingsDisplay();
+        alert("Type de consultation supprimé!");
+        saveStateToLocalStorage();
     }
+}
+
+function saveVitalType(id) {
+    const vital = state.vitalTypes.find(v => v.id === id);
+    if (!vital) return;
+    
+    const minInput = document.querySelector(`.vital-min-input[data-id="${id}"]`);
+    const maxInput = document.querySelector(`.vital-max-input[data-id="${id}"]`);
+    
+    vital.min = parseFloat(minInput.value);
+    vital.max = parseFloat(maxInput.value);
+    
+    alert("Signe vital enregistré!");
+    if (typeof updateVitalsInputs === 'function') updateVitalsInputs();
+    saveStateToLocalStorage();
 }
 
 function toggleVitalType(id, active) {
     const vital = state.vitalTypes.find(v => v.id === id);
     if (vital) {
         vital.active = active;
+        if (typeof updateVitalsInputs === 'function') updateVitalsInputs();
+        saveStateToLocalStorage();
     }
 }
 
 function deleteVitalType(id) {
-    if (confirm("Supprimer ce signe vital?")) {
+    if (confirm("Supprimer ce signe vital? Cette action est irréversible.")) {
         state.vitalTypes = state.vitalTypes.filter(v => v.id !== id);
         updateSettingsDisplay();
+        alert("Signe vital supprimé!");
+        saveStateToLocalStorage();
     }
 }
 
@@ -1620,19 +1816,23 @@ function saveLabAnalysisType(id) {
     analysis.price = parseFloat(priceInput.value);
     
     alert("Analyse enregistrée!");
+    saveStateToLocalStorage();
 }
 
 function toggleLabAnalysisType(id, active) {
     const analysis = state.labAnalysisTypes.find(a => a.id === id);
     if (analysis) {
         analysis.active = active;
+        saveStateToLocalStorage();
     }
 }
 
 function deleteLabAnalysisType(id) {
-    if (confirm("Supprimer cette analyse?")) {
+    if (confirm("Supprimer cette analyse? Cette action est irréversible.")) {
         state.labAnalysisTypes = state.labAnalysisTypes.filter(a => a.id !== id);
         updateSettingsDisplay();
+        alert("Analyse supprimée!");
+        saveStateToLocalStorage();
     }
 }
 
@@ -1646,6 +1846,7 @@ function saveExternalServiceType(id) {
     alert("Service externe enregistré!");
     if (typeof updateExternalServicesSelect === 'function') updateExternalServicesSelect();
     if (typeof updateExternalServicesOptions === 'function') updateExternalServicesOptions();
+    saveStateToLocalStorage();
 }
 
 function toggleExternalServiceType(id, active) {
@@ -1654,15 +1855,18 @@ function toggleExternalServiceType(id, active) {
         service.active = active;
         if (typeof updateExternalServicesSelect === 'function') updateExternalServicesSelect();
         if (typeof updateExternalServicesOptions === 'function') updateExternalServicesOptions();
+        saveStateToLocalStorage();
     }
 }
 
 function deleteExternalServiceType(id) {
-    if (confirm("Supprimer ce service externe?")) {
+    if (confirm("Supprimer ce service externe? Cette action est irréversible.")) {
         state.externalServiceTypes = state.externalServiceTypes.filter(s => s.id != id);
         updateSettingsDisplay();
         if (typeof updateExternalServicesSelect === 'function') updateExternalServicesSelect();
         if (typeof updateExternalServicesOptions === 'function') updateExternalServicesOptions();
+        alert("Service externe supprimé!");
+        saveStateToLocalStorage();
     }
 }
 
@@ -1670,6 +1874,7 @@ function toggleUser(id, active) {
     const user = state.users.find(u => u.id === id);
     if (user) {
         user.active = active;
+        saveStateToLocalStorage();
     }
 }
 
@@ -1678,10 +1883,11 @@ function editUser(id) {
     if (!user) return;
     
     const newPassword = prompt(`Nouveau mot de passe pour ${user.name}:`, user.password);
-    if (newPassword !== null) {
+    if (newPassword !== null && newPassword.trim() !== '') {
         user.password = newPassword;
-        alert("Mot de passe modifié!");
+        alert("Mot de passe modifié avec succès!");
         updateSettingsDisplay();
+        saveStateToLocalStorage();
     }
 }
 
@@ -1691,10 +1897,12 @@ function deleteUser(id) {
         return;
     }
     
-    if (confirm("Supprimer cet utilisateur?")) {
+    if (confirm("Supprimer cet utilisateur? Cette action est irréversible.")) {
         state.users = state.users.filter(u => u.id !== id);
         updateSettingsDisplay();
         updateMessageRecipients();
+        alert("Utilisateur supprimé avec succès!");
+        saveStateToLocalStorage();
     }
 }
 
@@ -1774,7 +1982,17 @@ function setupMessaging() {
 
 function updateMessageRecipients() {
     const select = document.getElementById('message-recipient');
-    select.innerHTML = '<option value="">Nouveau message...</option><option value="all">Tous les utilisateurs</option><option value="all-doctors">Tous les médecins</option><option value="all-nurses">Tous les infirmiers</option><option value="all-secretaries">Tous les secrétaires</option><option value="all-cashiers">Tous les caissiers</option><option value="all-labs">Tout le laboratoire</option><option value="all-pharmacies">Toute la pharmacie</option><option value="all-admins">Tous les administrateurs</option>';
+    if (!select) return;
+    
+    select.innerHTML = '<option value="">Nouveau message...</option>' +
+        '<option value="all">Tous les utilisateurs</option>' +
+        '<option value="all-doctors">Tous les médecins</option>' +
+        '<option value="all-nurses">Tous les infirmiers</option>' +
+        '<option value="all-secretaries">Tous les secrétaires</option>' +
+        '<option value="all-cashiers">Tous les caissiers</option>' +
+        '<option value="all-labs">Tout le laboratoire</option>' +
+        '<option value="all-pharmacies">Toute la pharmacie</option>' +
+        '<option value="all-admins">Tous les administrateurs</option>';
     
     state.users.forEach(user => {
         if (user.active && user.username !== state.currentUser.username) {
@@ -1785,6 +2003,8 @@ function updateMessageRecipients() {
 
 function loadConversations() {
     const container = document.getElementById('conversations-container');
+    if (!container) return;
+    
     const userMessages = state.messages.filter(m => 
         m.recipient === state.currentUser.username || 
         m.sender === state.currentUser.username
@@ -1846,9 +2066,14 @@ function loadConversation(otherUser) {
     const otherUserObj = state.users.find(u => u.username === otherUser);
     const displayName = otherUserObj ? otherUserObj.name : otherUser;
     
-    document.getElementById('current-conversation-title').textContent = `Conversation avec ${displayName}`;
+    const titleElement = document.getElementById('current-conversation-title');
+    if (titleElement) {
+        titleElement.textContent = `Conversation avec ${displayName}`;
+    }
     
     const container = document.getElementById('chat-messages');
+    if (!container) return;
+    
     let html = '';
     
     messages.forEach(message => {
@@ -1872,8 +2097,15 @@ function loadConversation(otherUser) {
     container.innerHTML = html || '<p>Aucun message</p>';
     container.scrollTop = container.scrollHeight;
     
-    document.getElementById('chat-input-container').classList.remove('hidden');
-    document.getElementById('message-input').focus();
+    const chatInputContainer = document.getElementById('chat-input-container');
+    if (chatInputContainer) {
+        chatInputContainer.classList.remove('hidden');
+    }
+    
+    const messageInput = document.getElementById('message-input');
+    if (messageInput) {
+        messageInput.focus();
+    }
     
     loadConversations();
     updateMessageBadge();

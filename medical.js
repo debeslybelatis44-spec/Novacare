@@ -788,6 +788,13 @@ function setupLaboratory() {
         
         updatePendingAnalysesList();
     });
+    
+    // Ajouter un écouteur d'événement pour la touche Enter
+    document.getElementById('lab-patient-search').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            document.getElementById('search-lab-patient').click();
+        }
+    });
 }
 
 function enterLabResult(transactionId) {
