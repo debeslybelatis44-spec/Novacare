@@ -17,7 +17,8 @@ const state = {
         { id: 4, name: "Infirmier", role: "nurse", username: "nurse", password: "1234", active: true },
         { id: 5, name: "Docteur", role: "doctor", username: "doctor", password: "1234", active: true },
         { id: 6, name: "Laboratoire", role: "lab", username: "lab", password: "1234", active: true },
-        { id: 7, name: "Pharmacien", role: "pharmacy", username: "pharmacy", password: "1234", active: true }
+        { id: 7, name: "Pharmacien", role: "pharmacy", username: "pharmacy", password: "1234", active: true },
+        { id: 8, name: "Responsable", role: "responsible", username: "responsible", password: "1234", active: true }
     ],
     consultationTypes: [
         { id: 1, name: "Consultation générale", price: 500, description: "Consultation médicale standard", active: true },
@@ -46,14 +47,39 @@ const state = {
     externalServices: [],
     patientCounter: 1,
     transactionCounter: 1,
-    appointmentCounter: 1,
     messages: [],
     unreadMessages: 0,
     currentConversation: null,
     currentModifiedConsultation: null,
     currentModifiedAnalysis: null,
     hospitalLogo: null,
-    exchangeRate: 130
+    exchangeRate: 130,
+    
+    // NOUVEAUX ÉTATS AJOUTÉS
+    pettyCash: 50000,
+    mainCash: 1000000,
+    creditAccounts: {},
+    userTransactions: {},
+    reports: [],
+    cashierBalances: {},
+    roles: {
+        admin: {
+            canModifyAllTransactions: true,
+            canDeleteAllTransactions: true,
+            canManagePettyCash: true,
+            canGenerateAllReports: true,
+            canManageAllUsers: true,
+            canEditAllData: true
+        },
+        responsible: {
+            canModifyAllTransactions: true,
+            canDeleteAllTransactions: false,
+            canManagePettyCash: false,
+            canGenerateAllReports: true,
+            canManageAllUsers: false,
+            canEditAllData: false
+        }
+    }
 };
 
 function updateLogoDisplay() {
@@ -424,25 +450,8 @@ function loadDemoData() {
             time: '10:00',
             reason: 'Contrôle post-consultation',
             doctor: 'doctor',
-            doctorName: 'Docteur',
             createdBy: 'secretary',
-            createdAt: new Date().toISOString(),
-            status: 'scheduled',
-            notes: ''
-        },
-        {
-            id: 'APP0002',
-            patientId: 'URG0002',
-            patientName: 'Marie Curie',
-            date: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-            time: '14:30',
-            reason: 'Suivi urgence',
-            doctor: 'doctor',
-            doctorName: 'Docteur',
-            createdBy: 'secretary',
-            createdAt: new Date().toISOString(),
-            status: 'scheduled',
-            notes: ''
+            status: 'scheduled'
         }
     );
     
@@ -473,7 +482,42 @@ function loadDemoData() {
         }
     );
     
+    // Données de démonstration pour les nouvelles fonctionnalités
+    state.creditAccounts = {
+        'PAT0001': {
+            balance: 5000,
+            history: [
+                {
+                    date: new Date().toISOString().split('T')[0],
+                    time: '09:00',
+                    amount: 5000,
+                    type: 'credit_attribution',
+                    by: 'admin',
+                    note: 'Crédit initial'
+                }
+            ]
+        }
+    };
+    
+    state.pettyCash = 50000;
+    state.mainCash = 1000000;
+    
+    state.cashierBalances = {
+        'cashier': {
+            balance: 500,
+            transactions: [
+                {
+                    date: new Date().toISOString().split('T')[0],
+                    time: '09:00',
+                    type: 'initial',
+                    amount: 500,
+                    patientId: 'PAT0001',
+                    transactionId: 'TR0001'
+                }
+            ]
+        }
+    };
+    
     state.patientCounter = 5;
     state.transactionCounter = 4;
-    state.appointmentCounter = 3;
 }

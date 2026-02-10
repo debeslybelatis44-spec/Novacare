@@ -23,6 +23,9 @@ function setupAdmin() {
             discountSection.classList.add('hidden');
         }
     });
+    
+    // NOUVELLES FONCTIONNALITÉS ADMINISTRATION
+    setupAdminExtended();
 }
 
 function searchAdminPatient() {
@@ -69,17 +72,29 @@ function searchAdminPatient() {
     }
     
     const history = state.transactions.filter(t => t.patientId === patient.id);
-    let html = '<table class="table-container"><thead><tr><th>Date</th><th>Service</th><th>Montant</th><th>Statut</th><th>Type</th></tr></thead><tbody>';
+    let html = '<table class="table-container"><thead><tr><th>Date</th><th>Service</th><th>Montant</th><th>Statut</th><th>Type</th><th>Actions</th></tr></thead><tbody>';
     if (history.length === 0) {
-        html += '<tr><td colspan="5" class="text-center">Aucune transaction</td></tr>';
+        html += '<tr><td colspan="6" class="text-center">Aucune transaction</td></tr>';
     } else {
         history.forEach(t => {
             const amountUSD = t.amount / state.exchangeRate;
-            html += `<tr><td>${t.date}</td><td>${t.service}</td><td>${t.amount} Gdes (${amountUSD.toFixed(2)} $)</td><td>${t.status}</td><td>${t.type}</td></tr>`;
+            html += `<tr>
+                <td>${t.date}</td>
+                <td>${t.service}</td>
+                <td>${t.amount} Gdes (${amountUSD.toFixed(2)} $)</td>
+                <td>${t.status}</td>
+                <td>${t.type}</td>
+                <td>
+                    <button class="btn btn-sm btn-warning" onclick="selectTransactionForEdit('${t.id}')">Sélectionner</button>
+                </td>
+            </tr>`;
         });
     }
     html += '</tbody></table>';
     document.getElementById('admin-patient-history').innerHTML = html;
+    
+    // Afficher le crédit du patient
+    updateCreditDisplay(patientId);
 }
 
 function savePrivilege() {
@@ -148,7 +163,7 @@ function updateAdminStats() {
     document.getElementById('admin-external-amount').textContent = externalAmount + ' Gdes (' + externalAmountUSD.toFixed(2) + ' $)';
     
     const totalRevenue = state.transactions
-        .filter(t => t.status === 'paid')
+        .filter(t => t.status === 'paid' && !t.isCredit)
         .reduce((sum, t) => sum + t.amount, 0);
     const totalRevenueUSD = totalRevenue / exchangeRate;
     document.getElementById('admin-total-revenue').textContent = totalRevenue + ' Gdes (' + totalRevenueUSD.toFixed(2) + ' $)';
@@ -176,7 +191,7 @@ function updateCharts() {
         document.getElementById('external-percentage').textContent = externalPercentage + '%';
         document.getElementById('total-services-count').textContent = totalTransactions;
         
-        const paidTransactions = state.transactions.filter(t => t.status === 'paid').length;
+        const paidTransactions = state.transactions.filter(t => t.status === 'paid' && !t.isCredit).length;
         const unpaidTransactions = state.transactions.filter(t => t.status === 'unpaid').length;
         const total = paidTransactions + unpaidTransactions;
         
@@ -253,11 +268,961 @@ function updateRecentTransactions() {
                 <td>${transaction.paymentMethod || '-'}</td>
                 <td>${transaction.createdBy}</td>
                 <td><span class="${transaction.status === 'paid' ? 'status-paid' : 'status-unpaid'}">${transaction.status === 'paid' ? 'Payé' : 'Non payé'}</span></td>
+                <td>
+                    <button class="btn btn-sm btn-warning" onclick="selectTransactionForEdit('${transaction.id}')">
+                        Sélectionner
+                    </button>
+                </td>
             </tr>
         `;
     });
     
     container.innerHTML = html;
+}
+
+// ==================== NOUVELLES FONCTIONNALITÉS ADMINISTRATION ÉTENDUE ====================
+
+function setupAdminExtended() {
+    // Gestion des crédits
+    document.getElementById('add-credit-btn')?.addEventListener('click', addPatientCredit);
+    document.getElementById('transfer-petty-cash')?.addEventListener('click', transferToPettyCash);
+    document.getElementById('view-credit-history')?.addEventListener('click', viewCreditHistory);
+    
+    // Gestion des transactions
+    document.getElementById('edit-transaction-btn')?.addEventListener('click', editTransaction);
+    document.getElementById('delete-transaction-btn')?.addEventListener('click', deleteTransaction);
+    
+    // Rapports
+    document.getElementById('generate-report-btn')?.addEventListener('click', generateReport);
+    document.getElementById('generate-user-report-btn')?.addEventListener('click', generateUserReport);
+    document.getElementById('export-report-csv')?.addEventListener('click', exportReportToCSV);
+    
+    // Gestion des caisses
+    document.getElementById('view-cashier-balances')?.addEventListener('click', viewCashierBalances);
+    document.getElementById('adjust-cashier-balance')?.addEventListener('click', adjustCashierBalance);
+    
+    // Initialiser l'affichage
+    updateAdminExtendedDisplay();
+}
+
+function updateAdminExtendedDisplay() {
+    // Mettre à jour les affichages des caisses
+    const mainCashElement = document.getElementById('main-cash-balance');
+    const pettyCashElement = document.getElementById('petty-cash-balance');
+    
+    if (mainCashElement) mainCashElement.textContent = state.mainCash.toLocaleString() + ' Gdes';
+    if (pettyCashElement) pettyCashElement.textContent = state.pettyCash.toLocaleString() + ' Gdes';
+    
+    // Mettre à jour les totaux par utilisateur
+    updateUserTransactionTotals();
+}
+
+// Ajouter un crédit à un patient
+function addPatientCredit() {
+    const patientId = document.getElementById('admin-patient-search').value.trim();
+    const creditAmount = parseFloat(document.getElementById('credit-amount').value);
+    const creditNote = document.getElementById('credit-note').value;
+    
+    if (!patientId || !creditAmount || creditAmount <= 0) {
+        alert("Veuillez saisir un ID patient et un montant valide!");
+        return;
+    }
+    
+    const patient = state.patients.find(p => p.id === patientId);
+    if (!patient) {
+        alert("Patient non trouvé!");
+        return;
+    }
+    
+    // Initialiser le compte crédit si nécessaire
+    if (!state.creditAccounts[patientId]) {
+        state.creditAccounts[patientId] = {
+            balance: 0,
+            history: []
+        };
+    }
+    
+    // Ajouter le crédit
+    state.creditAccounts[patientId].balance += creditAmount;
+    state.creditAccounts[patientId].history.push({
+        date: new Date().toISOString().split('T')[0],
+        time: new Date().toLocaleTimeString('fr-FR'),
+        amount: creditAmount,
+        type: 'credit_attribution',
+        by: state.currentUser.username,
+        note: creditNote || 'Crédit attribué'
+    });
+    
+    // Enregistrer la transaction (mais ne pas l'ajouter au revenu total)
+    const creditTransaction = {
+        id: 'CREDIT' + Date.now(),
+        patientId: patientId,
+        patientName: patient.fullName,
+        service: `Crédit attribué: ${creditNote}`,
+        amount: creditAmount,
+        status: 'credited',
+        date: new Date().toISOString().split('T')[0],
+        time: new Date().toLocaleTimeString('fr-FR'),
+        createdBy: state.currentUser.username,
+        type: 'credit',
+        paymentMethod: 'credit',
+        isCredit: true
+    };
+    
+    state.transactions.push(creditTransaction);
+    
+    alert(`Crédit de ${creditAmount} Gdes attribué au patient ${patient.fullName}`);
+    
+    // Réinitialiser le formulaire
+    document.getElementById('credit-amount').value = '';
+    document.getElementById('credit-note').value = '';
+    
+    // Mettre à jour l'affichage
+    searchAdminPatient();
+    updateCreditDisplay(patientId);
+}
+
+// Transférer de la grande caisse vers la petite caisse
+function transferToPettyCash() {
+    const amount = parseFloat(document.getElementById('petty-cash-amount').value);
+    
+    if (!amount || amount <= 0) {
+        alert("Veuillez saisir un montant valide!");
+        return;
+    }
+    
+    if (amount > state.mainCash) {
+        alert("Fonds insuffisants dans la grande caisse!");
+        return;
+    }
+    
+    if (confirm(`Transférer ${amount} Gdes de la grande caisse vers la petite caisse?`)) {
+        state.mainCash -= amount;
+        state.pettyCash += amount;
+        
+        // Enregistrer la transaction de transfert
+        const transferRecord = {
+            id: 'TRANSFER' + Date.now(),
+            date: new Date().toISOString().split('T')[0],
+            time: new Date().toLocaleTimeString('fr-FR'),
+            amount: amount,
+            from: 'main_cash',
+            to: 'petty_cash',
+            by: state.currentUser.username,
+            note: 'Transfert grande caisse vers petite caisse'
+        };
+        
+        if (!state.reports) state.reports = [];
+        state.reports.push(transferRecord);
+        
+        alert(`Transfert de ${amount} Gdes effectué avec succès!`);
+        
+        // Mettre à jour l'affichage
+        updateAdminExtendedDisplay();
+        document.getElementById('petty-cash-amount').value = '';
+    }
+}
+
+// Afficher l'historique des crédits
+function viewCreditHistory(patientId = null) {
+    if (!patientId) {
+        patientId = document.getElementById('admin-patient-search').value.trim();
+    }
+    
+    const creditAccount = state.creditAccounts[patientId];
+    if (!creditAccount) {
+        alert("Aucun crédit pour ce patient!");
+        return;
+    }
+    
+    const modal = document.createElement('div');
+    modal.className = 'transaction-details-modal';
+    modal.innerHTML = `
+        <div class="transaction-details-content">
+            <h3>Historique des crédits - ${patientId}</h3>
+            <p>Solde actuel: <strong>${creditAccount.balance} Gdes</strong></p>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Date/Heure</th>
+                            <th>Montant</th>
+                            <th>Type</th>
+                            <th>Par</th>
+                            <th>Note</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${creditAccount.history.map(record => `
+                            <tr>
+                                <td>${record.date} ${record.time}</td>
+                                <td>${record.amount} Gdes</td>
+                                <td>${record.type}</td>
+                                <td>${record.by}</td>
+                                <td>${record.note || ''}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+            <button class="btn btn-secondary mt-3" onclick="this.closest('.transaction-details-modal').remove()">
+                Fermer
+            </button>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+}
+
+// Modifier une transaction existante
+function editTransaction() {
+    const transactionId = document.getElementById('selected-transaction-id').value;
+    if (!transactionId) {
+        alert("Veuillez sélectionner une transaction!");
+        return;
+    }
+    
+    const transaction = state.transactions.find(t => t.id === transactionId);
+    if (!transaction) {
+        alert("Transaction non trouvée!");
+        return;
+    }
+    
+    // Vérifier les permissions
+    if (state.currentRole === 'responsible' && !state.roles.responsible.canModifyAllTransactions) {
+        alert("Vous n'avez pas la permission de modifier les transactions!");
+        return;
+    }
+    
+    const newAmount = parseFloat(prompt("Nouveau montant (Gdes):", transaction.amount));
+    if (!newAmount || newAmount < 0) {
+        alert("Montant invalide!");
+        return;
+    }
+    
+    const oldAmount = transaction.amount;
+    transaction.amount = newAmount;
+    
+    // Mettre à jour les soldes si la transaction était payée
+    if (transaction.status === 'paid') {
+        const difference = newAmount - oldAmount;
+        
+        // Mettre à jour le solde du caissier si applicable
+        if (state.cashierBalances[transaction.paymentAgent]) {
+            state.cashierBalances[transaction.paymentAgent].balance += difference;
+        }
+        
+        // Mettre à jour la grande caisse
+        state.mainCash += difference;
+    }
+    
+    // Ajouter une note d'audit
+    transaction.modifications = transaction.modifications || [];
+    transaction.modifications.push({
+        date: new Date().toISOString().split('T')[0],
+        time: new Date().toLocaleTimeString('fr-FR'),
+        by: state.currentUser.username,
+        oldAmount: oldAmount,
+        newAmount: newAmount,
+        reason: 'Modification par administrateur'
+    });
+    
+    alert("Transaction modifiée avec succès!");
+    updateAdminStats();
+    updateRecentTransactions();
+}
+
+// Supprimer une transaction
+function deleteTransaction() {
+    const transactionId = document.getElementById('selected-transaction-id').value;
+    if (!transactionId) {
+        alert("Veuillez sélectionner une transaction!");
+        return;
+    }
+    
+    const transaction = state.transactions.find(t => t.id === transactionId);
+    if (!transaction) {
+        alert("Transaction non trouvée!");
+        return;
+    }
+    
+    // Vérifier les permissions
+    if (state.currentRole === 'responsible' && !state.roles.responsible.canDeleteAllTransactions) {
+        alert("Vous n'avez pas la permission de supprimer les transactions!");
+        return;
+    }
+    
+    if (!confirm(`Êtes-vous sûr de vouloir supprimer cette transaction?\n${transaction.service} - ${transaction.amount} Gdes`)) {
+        return;
+    }
+    
+    // Annuler l'effet sur les caisses si la transaction était payée
+    if (transaction.status === 'paid') {
+        // Rembourser la grande caisse
+        state.mainCash -= transaction.amount;
+        
+        // Rembourser le caissier si applicable
+        if (state.cashierBalances[transaction.paymentAgent]) {
+            state.cashierBalances[transaction.paymentAgent].balance -= transaction.amount;
+        }
+    }
+    
+    // Supprimer la transaction
+    state.transactions = state.transactions.filter(t => t.id !== transactionId);
+    
+    alert("Transaction supprimée avec succès!");
+    updateAdminStats();
+    updateRecentTransactions();
+}
+
+// Générer un rapport complet
+function generateReport() {
+    const reportType = document.getElementById('report-type').value;
+    const startDate = document.getElementById('report-start-date').value;
+    const endDate = document.getElementById('report-end-date').value;
+    
+    if (!reportType) {
+        alert("Veuillez sélectionner un type de rapport!");
+        return;
+    }
+    
+    let reportData = {};
+    let title = '';
+    
+    switch(reportType) {
+        case 'financial':
+            title = 'Rapport Financier';
+            reportData = generateFinancialReport(startDate, endDate);
+            break;
+        case 'transactions':
+            title = 'Rapport des Transactions';
+            reportData = generateTransactionReport(startDate, endDate);
+            break;
+        case 'patients':
+            title = 'Rapport des Patients';
+            reportData = generatePatientReport(startDate, endDate);
+            break;
+        case 'services':
+            title = 'Rapport des Services';
+            reportData = generateServiceReport(startDate, endDate);
+            break;
+        default:
+            alert("Type de rapport non reconnu!");
+            return;
+    }
+    
+    // Afficher le rapport
+    displayReport(title, reportData);
+}
+
+// Générer un rapport financier
+function generateFinancialReport(startDate, endDate) {
+    const filteredTransactions = state.transactions.filter(t => {
+        if (startDate && t.date < startDate) return false;
+        if (endDate && t.date > endDate) return false;
+        return true;
+    });
+    
+    const paidTransactions = filteredTransactions.filter(t => t.status === 'paid' && !t.isCredit);
+    const unpaidTransactions = filteredTransactions.filter(t => t.status === 'unpaid');
+    const creditTransactions = filteredTransactions.filter(t => t.isCredit);
+    
+    const totalRevenue = paidTransactions.reduce((sum, t) => sum + t.amount, 0);
+    const totalUnpaid = unpaidTransactions.reduce((sum, t) => sum + t.amount, 0);
+    const totalCredit = creditTransactions.reduce((sum, t) => sum + t.amount, 0);
+    
+    const byServiceType = {};
+    paidTransactions.forEach(t => {
+        byServiceType[t.type] = (byServiceType[t.type] || 0) + t.amount;
+    });
+    
+    return {
+        period: startDate && endDate ? `${startDate} au ${endDate}` : 'Toute période',
+        totalRevenue,
+        totalUnpaid,
+        totalCredit,
+        transactionCount: filteredTransactions.length,
+        paidCount: paidTransactions.length,
+        unpaidCount: unpaidTransactions.length,
+        byServiceType,
+        mainCashBalance: state.mainCash,
+        pettyCashBalance: state.pettyCash,
+        creditAccountsTotal: Object.values(state.creditAccounts).reduce((sum, acc) => sum + (acc.balance || 0), 0)
+    };
+}
+
+// Générer un rapport des transactions
+function generateTransactionReport(startDate, endDate) {
+    const filteredTransactions = state.transactions.filter(t => {
+        if (startDate && t.date < startDate) return false;
+        if (endDate && t.date > endDate) return false;
+        return true;
+    });
+    
+    return {
+        period: startDate && endDate ? `${startDate} au ${endDate}` : 'Toute période',
+        transactions: filteredTransactions,
+        totalAmount: filteredTransactions.reduce((sum, t) => sum + t.amount, 0)
+    };
+}
+
+// Générer un rapport des patients
+function generatePatientReport(startDate, endDate) {
+    const filteredPatients = state.patients.filter(p => {
+        if (startDate && p.registrationDate < startDate) return false;
+        if (endDate && p.registrationDate > endDate) return false;
+        return true;
+    });
+    
+    const byType = {};
+    filteredPatients.forEach(p => {
+        byType[p.type] = (byType[p.type] || 0) + 1;
+    });
+    
+    return {
+        period: startDate && endDate ? `${startDate} au ${endDate}` : 'Toute période',
+        patients: filteredPatients,
+        totalPatients: filteredPatients.length,
+        byType
+    };
+}
+
+// Générer un rapport des services
+function generateServiceReport(startDate, endDate) {
+    const filteredTransactions = state.transactions.filter(t => {
+        if (startDate && t.date < startDate) return false;
+        if (endDate && t.date > endDate) return false;
+        return true;
+    });
+    
+    const services = {};
+    filteredTransactions.forEach(t => {
+        if (!services[t.service]) {
+            services[t.service] = { count: 0, total: 0 };
+        }
+        services[t.service].count++;
+        services[t.service].total += t.amount;
+    });
+    
+    return {
+        period: startDate && endDate ? `${startDate} au ${endDate}` : 'Toute période',
+        services,
+        totalServices: filteredTransactions.length
+    };
+}
+
+// Afficher le rapport
+function displayReport(title, data) {
+    const modal = document.createElement('div');
+    modal.className = 'transaction-details-modal';
+    
+    let html = `
+        <div class="transaction-details-content">
+            <h3>${title}</h3>
+            <p><strong>Période:</strong> ${data.period}</p>
+    `;
+    
+    if (data.totalRevenue !== undefined) {
+        html += `
+            <div class="report-summary">
+                <h4>Résumé Financier</h4>
+                <p>Revenus totaux: <strong>${data.totalRevenue.toLocaleString()} Gdes</strong></p>
+                <p>Montants impayés: <strong>${data.totalUnpaid.toLocaleString()} Gdes</strong></p>
+                <p>Crédits attribués: <strong>${data.totalCredit.toLocaleString()} Gdes</strong></p>
+                <p>Transactions: ${data.transactionCount} (Payées: ${data.paidCount}, Impayées: ${data.unpaidCount})</p>
+                <p>Caisse principale: <strong>${data.mainCashBalance.toLocaleString()} Gdes</strong></p>
+                <p>Petite caisse: <strong>${data.pettyCashBalance.toLocaleString()} Gdes</strong></p>
+                <p>Total crédits patients: <strong>${data.creditAccountsTotal.toLocaleString()} Gdes</strong></p>
+            </div>
+        `;
+    }
+    
+    if (data.byServiceType) {
+        html += `
+            <div class="report-details mt-3">
+                <h4>Répartition par type de service</h4>
+                <table class="table-container">
+                    <thead>
+                        <tr>
+                            <th>Type de service</th>
+                            <th>Montant</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        `;
+        
+        for (const [type, amount] of Object.entries(data.byServiceType)) {
+            html += `
+                <tr>
+                    <td>${type}</td>
+                    <td>${amount.toLocaleString()} Gdes</td>
+                </tr>
+            `;
+        }
+        
+        html += `
+                    </tbody>
+                </table>
+            </div>
+        `;
+    }
+    
+    html += `
+        <div class="mt-3">
+            <button class="btn btn-success" onclick="printReport()">
+                <i class="fas fa-print"></i> Imprimer le rapport
+            </button>
+            <button class="btn btn-secondary" onclick="this.closest('.transaction-details-modal').remove()">
+                Fermer
+            </button>
+        </div>
+    </div>`;
+    
+    modal.innerHTML = html;
+    document.body.appendChild(modal);
+}
+
+// Générer un rapport utilisateur
+function generateUserReport() {
+    const users = state.users;
+    const userReport = {};
+    
+    users.forEach(user => {
+        const userTransactions = state.transactions.filter(t => 
+            t.createdBy === user.username || 
+            t.paymentAgent === user.username
+        );
+        
+        const totalCreated = userTransactions.filter(t => t.createdBy === user.username)
+            .reduce((sum, t) => sum + t.amount, 0);
+        
+        const totalProcessed = userTransactions.filter(t => t.paymentAgent === user.username)
+            .reduce((sum, t) => sum + t.amount, 0);
+        
+        userReport[user.username] = {
+            name: user.name,
+            role: user.role,
+            transactionsCreated: userTransactions.filter(t => t.createdBy === user.username).length,
+            transactionsProcessed: userTransactions.filter(t => t.paymentAgent === user.username).length,
+            totalCreated,
+            totalProcessed,
+            lastActivity: userTransactions.length > 0 ? 
+                Math.max(...userTransactions.map(t => new Date(t.date + ' ' + t.time).getTime())) : null
+        };
+    });
+    
+    displayUserReport(userReport);
+}
+
+// Afficher le rapport utilisateur
+function displayUserReport(userReport) {
+    const modal = document.createElement('div');
+    modal.className = 'transaction-details-modal';
+    
+    let html = `
+        <div class="transaction-details-content">
+            <h3>Rapport d'Activité des Utilisateurs</h3>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Utilisateur</th>
+                            <th>Rôle</th>
+                            <th>Transactions créées</th>
+                            <th>Transactions traitées</th>
+                            <th>Montant créé</th>
+                            <th>Montant traité</th>
+                            <th>Dernière activité</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+    `;
+    
+    for (const [username, data] of Object.entries(userReport)) {
+        const lastActivity = data.lastActivity ? 
+            new Date(data.lastActivity).toLocaleDateString('fr-FR') : 'Jamais';
+        
+        html += `
+            <tr>
+                <td>${data.name} (${username})</td>
+                <td>${data.role}</td>
+                <td>${data.transactionsCreated}</td>
+                <td>${data.transactionsProcessed}</td>
+                <td>${data.totalCreated.toLocaleString()} Gdes</td>
+                <td>${data.totalProcessed.toLocaleString()} Gdes</td>
+                <td>${lastActivity}</td>
+            </tr>
+        `;
+    }
+    
+    html += `
+                    </tbody>
+                </table>
+            </div>
+            <div class="mt-3">
+                <button class="btn btn-success" onclick="exportUserReportToCSV()">
+                    <i class="fas fa-download"></i> Exporter en CSV
+                </button>
+                <button class="btn btn-secondary" onclick="this.closest('.transaction-details-modal').remove()">
+                    Fermer
+                </button>
+            </div>
+        </div>
+    `;
+    
+    modal.innerHTML = html;
+    document.body.appendChild(modal);
+}
+
+// Voir les soldes des caissiers
+function viewCashierBalances() {
+    const modal = document.createElement('div');
+    modal.className = 'transaction-details-modal';
+    
+    let html = `
+        <div class="transaction-details-content">
+            <h3>Soldes des Caissiers</h3>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Caissier</th>
+                            <th>Nom</th>
+                            <th>Solde actuel</th>
+                            <th>Transactions</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+    `;
+    
+    for (const [username, data] of Object.entries(state.cashierBalances)) {
+        const user = state.users.find(u => u.username === username);
+        const transactionCount = data.transactions ? data.transactions.length : 0;
+        
+        html += `
+            <tr>
+                <td>${username}</td>
+                <td>${user ? user.name : 'Non trouvé'}</td>
+                <td>${data.balance.toLocaleString()} Gdes</td>
+                <td>${transactionCount}</td>
+                <td>
+                    <button class="btn btn-warning btn-sm" onclick="adjustCashierBalancePrompt('${username}')">
+                        Ajuster
+                    </button>
+                </td>
+            </tr>
+        `;
+    }
+    
+    html += `
+                    </tbody>
+                </table>
+            </div>
+            <div class="mt-3">
+                <button class="btn btn-secondary" onclick="this.closest('.transaction-details-modal').remove()">
+                    Fermer
+                </button>
+            </div>
+        </div>
+    `;
+    
+    modal.innerHTML = html;
+    document.body.appendChild(modal);
+}
+
+// Ajuster le solde d'un caissier
+function adjustCashierBalancePrompt(username) {
+    const currentBalance = state.cashierBalances[username].balance;
+    const adjustment = parseFloat(prompt(`Solde actuel: ${currentBalance} Gdes\nMontant d'ajustement (positif pour ajouter, négatif pour retirer):`, 0));
+    
+    if (isNaN(adjustment)) {
+        alert("Montant invalide!");
+        return;
+    }
+    
+    const reason = prompt("Raison de l'ajustement:");
+    if (!reason) {
+        alert("Veuillez fournir une raison!");
+        return;
+    }
+    
+    if (adjustment < 0 && Math.abs(adjustment) > currentBalance) {
+        alert("Solde insuffisant!");
+        return;
+    }
+    
+    state.cashierBalances[username].balance += adjustment;
+    
+    // Enregistrer l'ajustement
+    state.cashierBalances[username].transactions = state.cashierBalances[username].transactions || [];
+    state.cashierBalances[username].transactions.push({
+        date: new Date().toISOString().split('T')[0],
+        time: new Date().toLocaleTimeString('fr-FR'),
+        type: 'adjustment',
+        amount: adjustment,
+        by: state.currentUser.username,
+        reason: reason,
+        newBalance: state.cashierBalances[username].balance
+    });
+    
+    alert(`Solde ajusté de ${adjustment} Gdes. Nouveau solde: ${state.cashierBalances[username].balance} Gdes`);
+    viewCashierBalances();
+}
+
+// Mettre à jour les totaux par utilisateur
+function updateUserTransactionTotals() {
+    const container = document.getElementById('user-transaction-totals');
+    if (!container) return;
+    
+    let html = '<h3>Totaux par utilisateur</h3><table class="table-container"><thead><tr><th>Utilisateur</th><th>Transactions créées</th><th>Montant total</th><th>Actions</th></tr></thead><tbody>';
+    
+    const userTotals = {};
+    state.transactions.forEach(t => {
+        if (!userTotals[t.createdBy]) {
+            userTotals[t.createdBy] = { count: 0, amount: 0 };
+        }
+        userTotals[t.createdBy].count++;
+        userTotals[t.createdBy].amount += t.amount;
+    });
+    
+    for (const [username, data] of Object.entries(userTotals)) {
+        const user = state.users.find(u => u.username === username);
+        html += `
+            <tr>
+                <td>${user ? user.name : username} (${username})</td>
+                <td>${data.count}</td>
+                <td>${data.amount.toLocaleString()} Gdes</td>
+                <td>
+                    <button class="btn btn-info btn-sm" onclick="viewUserTransactions('${username}')">
+                        Voir
+                    </button>
+                    <button class="btn btn-warning btn-sm" onclick="editUserTransactions('${username}')">
+                        Modifier
+                    </button>
+                </td>
+            </tr>
+        `;
+    }
+    
+    html += '</tbody></table>';
+    container.innerHTML = html;
+}
+
+// Voir les transactions d'un utilisateur
+function viewUserTransactions(username) {
+    const userTransactions = state.transactions.filter(t => t.createdBy === username);
+    const user = state.users.find(u => u.username === username);
+    
+    let html = `
+        <h3>Transactions de ${user ? user.name : username}</h3>
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Date</th>
+                        <th>Patient</th>
+                        <th>Service</th>
+                        <th>Montant</th>
+                        <th>Statut</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+    `;
+    
+    userTransactions.forEach(t => {
+        html += `
+            <tr>
+                <td>${t.id}</td>
+                <td>${t.date} ${t.time}</td>
+                <td>${t.patientName}</td>
+                <td>${t.service}</td>
+                <td>${t.amount} Gdes</td>
+                <td>${t.status}</td>
+                <td>
+                    <button class="btn btn-warning btn-sm" onclick="selectTransactionForEdit('${t.id}')">
+                        Sélectionner
+                    </button>
+                </td>
+            </tr>
+        `;
+    });
+    
+    html += `
+                </tbody>
+            </table>
+        </div>
+    `;
+    
+    const modal = document.createElement('div');
+    modal.className = 'transaction-details-modal';
+    modal.innerHTML = `<div class="transaction-details-content">${html}<button class="btn btn-secondary mt-3" onclick="this.closest('.transaction-details-modal').remove()">Fermer</button></div>`;
+    document.body.appendChild(modal);
+}
+
+// Sélectionner une transaction pour modification
+function selectTransactionForEdit(transactionId) {
+    document.getElementById('selected-transaction-id').value = transactionId;
+    alert(`Transaction ${transactionId} sélectionnée pour modification`);
+}
+
+// Exporter un rapport en CSV
+function exportReportToCSV() {
+    const reportType = document.getElementById('report-type').value;
+    const startDate = document.getElementById('report-start-date').value;
+    const endDate = document.getElementById('report-end-date').value;
+    
+    let csvContent = "data:text/csv;charset=utf-8,";
+    let rows = [];
+    
+    switch(reportType) {
+        case 'transactions':
+            rows.push(["ID", "Date", "Patient", "Service", "Montant", "Statut", "Créé par"]);
+            state.transactions.forEach(t => {
+                rows.push([t.id, t.date, t.patientName, t.service, t.amount, t.status, t.createdBy]);
+            });
+            break;
+        case 'financial':
+            rows.push(["Type", "Montant"]);
+            const financialData = generateFinancialReport(startDate, endDate);
+            rows.push(["Revenus totaux", financialData.totalRevenue]);
+            rows.push(["Impayés totaux", financialData.totalUnpaid]);
+            rows.push(["Caisse principale", financialData.mainCashBalance]);
+            rows.push(["Petite caisse", financialData.pettyCashBalance]);
+            break;
+    }
+    
+    rows.forEach(row => {
+        csvContent += row.join(",") + "\n";
+    });
+    
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `rapport_${reportType}_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
+// Imprimer un rapport
+function printReport() {
+    const reportModal = document.querySelector('.transaction-details-modal:last-child');
+    if (!reportModal) return;
+    
+    const reportContent = reportModal.querySelector('.transaction-details-content').innerHTML;
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(`
+        <html>
+        <head>
+            <title>Rapport</title>
+            <style>
+                body { font-family: Arial, sans-serif; padding: 20px; }
+                table { border-collapse: collapse; width: 100%; margin: 20px 0; }
+                th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+                th { background-color: #f2f2f2; }
+                .report-summary { margin: 20px 0; padding: 15px; background: #f8f9fa; border-radius: 5px; }
+            </style>
+        </head>
+        <body>
+            ${reportContent}
+        </body>
+        </html>
+    `);
+    printWindow.document.close();
+    printWindow.print();
+}
+
+// Mettre à jour l'affichage du crédit dans la section patient
+function updateCreditDisplay(patientId) {
+    const creditAccount = state.creditAccounts[patientId];
+    const container = document.getElementById('patient-credit-display');
+    
+    if (!container) return;
+    
+    if (creditAccount) {
+        container.innerHTML = `
+            <div class="credit-info">
+                <h5>Crédit disponible</h5>
+                <p><strong>${creditAccount.balance} Gdes</strong></p>
+                <button class="btn btn-info btn-sm" onclick="viewCreditHistory('${patientId}')">
+                    Voir l'historique
+                </button>
+                <button class="btn btn-warning btn-sm" onclick="usePatientCredit('${patientId}')">
+                    Utiliser le crédit
+                </button>
+            </div>
+        `;
+        container.classList.remove('hidden');
+    } else {
+        container.innerHTML = '<p>Aucun crédit disponible</p>';
+        container.classList.remove('hidden');
+    }
+}
+
+// Utiliser le crédit d'un patient
+function usePatientCredit(patientId) {
+    const creditAccount = state.creditAccounts[patientId];
+    if (!creditAccount || creditAccount.balance <= 0) {
+        alert("Aucun crédit disponible!");
+        return;
+    }
+    
+    const amountToUse = parseFloat(prompt(`Crédit disponible: ${creditAccount.balance} Gdes\nMontant à utiliser:`, creditAccount.balance));
+    
+    if (!amountToUse || amountToUse <= 0 || amountToUse > creditAccount.balance) {
+        alert("Montant invalide!");
+        return;
+    }
+    
+    // Trouver les transactions impayées du patient
+    const unpaidTransactions = state.transactions.filter(t => 
+        t.patientId === patientId && 
+        t.status === 'unpaid' &&
+        !t.isCredit
+    );
+    
+    if (unpaidTransactions.length === 0) {
+        alert("Ce patient n'a pas de transactions impayées!");
+        return;
+    }
+    
+    // Appliquer le crédit aux transactions
+    let remainingCredit = amountToUse;
+    for (const transaction of unpaidTransactions) {
+        if (remainingCredit <= 0) break;
+        
+        const amountToPay = Math.min(transaction.amount, remainingCredit);
+        transaction.amount -= amountToPay;
+        remainingCredit -= amountToPay;
+        
+        if (transaction.amount <= 0) {
+            transaction.status = 'paid';
+            transaction.paymentMethod = 'credit';
+            transaction.paymentDate = new Date().toISOString().split('T')[0];
+            transaction.paymentTime = new Date().toLocaleTimeString('fr-FR');
+        } else {
+            transaction.status = 'partial';
+        }
+        
+        // Ajouter à l'historique du crédit
+        creditAccount.history.push({
+            date: new Date().toISOString().split('T')[0],
+            time: new Date().toLocaleTimeString('fr-FR'),
+            amount: -amountToPay,
+            type: 'credit_usage',
+            by: state.currentUser.username,
+            note: `Paiement de transaction ${transaction.id}`
+        });
+    }
+    
+    // Mettre à jour le solde du crédit
+    creditAccount.balance -= (amountToUse - remainingCredit);
+    
+    alert(`Crédit utilisé: ${amountToUse - remainingCredit} Gdes\nNouveau solde: ${creditAccount.balance} Gdes`);
+    searchAdminPatient();
 }
 
 // ==================== PARAMÈTRES ====================

@@ -59,6 +59,10 @@ function setupLogin() {
         if (typeof loadAppointmentsList === 'function') loadAppointmentsList();
         if (typeof loadDoctorAppointments === 'function') loadDoctorAppointments();
         if (typeof updateMedicationsSettingsList === 'function') updateMedicationsSettingsList();
+        
+        // Initialiser les nouvelles fonctionnalités d'administration
+        if (typeof updateAdminExtendedDisplay === 'function') updateAdminExtendedDisplay();
+        if (typeof updateUserTransactionTotals === 'function') updateUserTransactionTotals();
     });
 
     document.getElementById('logout-btn').addEventListener('click', () => {
@@ -77,6 +81,13 @@ function setupRoleBasedNavigation() {
         
         if (role === 'admin') {
             tab.classList.remove('hidden');
+        } else if (role === 'responsible') {
+            // Le responsable a accès à tout sauf paramètres
+            if (target === 'settings') {
+                tab.classList.add('hidden');
+            } else {
+                tab.classList.remove('hidden');
+            }
         } else if (role === 'secretary') {
             if (['dashboard', 'secretary', 'messaging'].includes(target)) {
                 tab.classList.remove('hidden');
@@ -145,6 +156,8 @@ function setupNavigation() {
             } else if (target === 'administration') {
                 if (typeof updateAdminStats === 'function') updateAdminStats();
                 if (typeof updateCharts === 'function') updateCharts();
+                if (typeof updateAdminExtendedDisplay === 'function') updateAdminExtendedDisplay();
+                if (typeof updateUserTransactionTotals === 'function') updateUserTransactionTotals();
             } else if (target === 'pharmacy') {
                 if (typeof updateMedicationStock === 'function') updateMedicationStock();
             } else if (target === 'messaging') {
@@ -165,7 +178,9 @@ function updateRoleDashboard() {
     
     let html = '';
     
-    if (role === 'admin') {
+    if (role === 'admin' || role === 'responsible') {
+        const totalCredit = Object.values(state.creditAccounts || {}).reduce((sum, acc) => sum + (acc.balance || 0), 0);
+        
         html = `
             <div class="stats-container">
                 <div class="stat-card clickable-stat" onclick="showSection('secretary')">
@@ -175,7 +190,7 @@ function updateRoleDashboard() {
                 <div class="stat-card clickable-stat" onclick="showSection('administration')">
                     <div class="stat-icon" style="background:#28a745"><i class="fas fa-money-bill-wave"></i></div>
                     <div class="stat-info">
-                        <h3>${state.transactions.filter(t => t.status === 'paid').reduce((sum, t) => sum + t.amount, 0)}</h3>
+                        <h3>${state.transactions.filter(t => t.status === 'paid' && !t.isCredit).reduce((sum, t) => sum + t.amount, 0)}</h3>
                         <p>Revenus totaux (Gdes)</p>
                     </div>
                 </div>
@@ -192,6 +207,22 @@ function updateRoleDashboard() {
                         <h3>${state.unreadMessages}</h3>
                         <p>Messages non lus</p>
                     </div>
+                </div>
+            </div>
+            
+            <div class="admin-stats-grid mt-3">
+                <div class="admin-stat-card">
+                    <h3><i class="fas fa-cash-register"></i> Caisses</h3>
+                    <p>Caisse principale: <strong>${(state.mainCash || 0).toLocaleString()} Gdes</strong></p>
+                    <p>Petite caisse: <strong>${(state.pettyCash || 0).toLocaleString()} Gdes</strong></p>
+                    <p>Crédits patients: <strong>${totalCredit.toLocaleString()} Gdes</strong></p>
+                </div>
+                
+                <div class="admin-stat-card">
+                    <h3><i class="fas fa-chart-line"></i> Aujourd'hui</h3>
+                    <p>Patients: <strong>${state.patients.filter(p => p.registrationDate === new Date().toISOString().split('T')[0]).length}</strong></p>
+                    <p>Transactions: <strong>${state.transactions.filter(t => t.date === new Date().toISOString().split('T')[0]).length}</strong></p>
+                    <p>Revenus: <strong>${state.transactions.filter(t => t.date === new Date().toISOString().split('T')[0] && t.status === 'paid' && !t.isCredit).reduce((sum, t) => sum + t.amount, 0)} Gdes</strong></p>
                 </div>
             </div>
             
