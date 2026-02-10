@@ -26,6 +26,8 @@ function setupCashier() {
         btn.addEventListener('click', function() {
             currencyBtns.forEach(b => b.classList.remove('active'));
             this.classList.add('active');
+            updateAmountGivenLabel();
+            calculateChange();
         });
     });
     
@@ -46,6 +48,7 @@ function setupCashier() {
     document.getElementById('print-invoice').addEventListener('click', printInvoice);
     document.getElementById('print-receipt').addEventListener('click', printReceipt);
     document.getElementById('print-general-sheet').addEventListener('click', printGeneralSheet);
+    document.getElementById('print-all-transactions').addEventListener('click', printAllTransactions);
     
     // Initialiser le solde du caissier s'il n'existe pas
     if (state.currentUser && state.currentUser.role === 'cashier') {
@@ -55,6 +58,24 @@ function setupCashier() {
                 transactions: []
             };
         }
+    }
+    
+    // Initialiser le label du montant donné
+    updateAmountGivenLabel();
+}
+
+function updateAmountGivenLabel() {
+    const currencyElement = document.querySelector('.payment-method-currency.active');
+    const currency = currencyElement ? currencyElement.dataset.currency : 'HTG';
+    const label = document.querySelector('label[for="amount-given"]');
+    
+    if (label) {
+        label.textContent = `Montant donné (${currency === 'USD' ? '$' : 'Gdes'}):`;
+    }
+    
+    const input = document.getElementById('amount-given');
+    if (input) {
+        input.placeholder = currency === 'USD' ? 'Montant en dollars' : 'Montant en gourdes';
     }
 }
 
@@ -139,20 +160,46 @@ function displayServicesToPay(patientId) {
     
     // Recalculer la monnaie
     calculateChange();
+    updateAmountGivenLabel();
 }
 
 function calculateChange() {
     const total = parseFloat(document.getElementById('total-to-pay').textContent) || 0;
     const amountGiven = parseFloat(document.getElementById('amount-given').value) || 0;
-    const change = amountGiven - total;
     
-    const resultElement = document.getElementById('change-result');
-    if (change < 0) {
-        resultElement.textContent = `Manquant: ${Math.abs(change)} Gdes`;
-        resultElement.style.color = '#dc3545';
+    const currencyElement = document.querySelector('.payment-method-currency.active');
+    const currency = currencyElement ? currencyElement.dataset.currency : 'HTG';
+    
+    let amountGivenInHTG = amountGiven;
+    let change = 0;
+    
+    if (currency === 'USD') {
+        // Convertir le montant donné en dollars vers gourdes
+        amountGivenInHTG = amountGiven * state.exchangeRate;
+        change = amountGivenInHTG - total;
+        
+        const resultElement = document.getElementById('change-result');
+        if (change < 0) {
+            const missingInUSD = Math.abs(change) / state.exchangeRate;
+            resultElement.textContent = `Manquant: ${Math.abs(change).toFixed(2)} Gdes (${missingInUSD.toFixed(2)} $)`;
+            resultElement.style.color = '#dc3545';
+        } else {
+            const changeInUSD = change / state.exchangeRate;
+            resultElement.textContent = `Monnaie: ${change.toFixed(2)} Gdes (${changeInUSD.toFixed(2)} $)`;
+            resultElement.style.color = '#28a745';
+        }
     } else {
-        resultElement.textContent = `Monnaie: ${change} Gdes`;
-        resultElement.style.color = '#28a745';
+        // Montant déjà en gourdes
+        change = amountGiven - total;
+        
+        const resultElement = document.getElementById('change-result');
+        if (change < 0) {
+            resultElement.textContent = `Manquant: ${Math.abs(change)} Gdes`;
+            resultElement.style.color = '#dc3545';
+        } else {
+            resultElement.textContent = `Monnaie: ${change} Gdes`;
+            resultElement.style.color = '#28a745';
+        }
     }
 }
 
@@ -193,12 +240,6 @@ function markAsPaid() {
     }
     
     const amountGiven = parseFloat(document.getElementById('amount-given').value) || 0;
-    
-    if (amountGiven < total) {
-        alert(`Montant donné insuffisant! Total: ${total} Gdes, Donné: ${amountGiven} Gdes`);
-        return;
-    }
-    
     const currencyElement = document.querySelector('.payment-method-currency.active');
     const paymentMethodElement = document.querySelector('.payment-method.active');
     
@@ -209,6 +250,17 @@ function markAsPaid() {
     
     const currency = currencyElement.dataset.currency;
     const paymentMethod = paymentMethodElement.dataset.method;
+    
+    // Convertir le montant donné en gourdes si nécessaire
+    let amountGivenInHTG = amountGiven;
+    if (currency === 'USD') {
+        amountGivenInHTG = amountGiven * state.exchangeRate;
+    }
+    
+    if (amountGivenInHTG < total) {
+        alert(`Montant donné insuffisant! Total: ${total} Gdes, Donné: ${amountGivenInHTG.toFixed(2)} Gdes`);
+        return;
+    }
     
     // Traiter chaque service sélectionné
     selectedServices.forEach(checkbox => {
@@ -223,7 +275,7 @@ function markAsPaid() {
             transaction.paymentMethod = paymentMethod;
             transaction.paymentCurrency = currency;
             transaction.amountGiven = amountGiven;
-            transaction.amountGivenInHTG = currency === 'HTG' ? amountGiven : amountGiven * state.exchangeRate;
+            transaction.amountGivenInHTG = amountGivenInHTG;
             
             // Mettre à jour le solde du caissier
             updateCashierBalance(transaction.amount, patientId, transactionId);
@@ -343,6 +395,9 @@ function resetCashierInterface() {
     const paymentBtns = document.querySelectorAll('.payment-method');
     paymentBtns.forEach(b => b.classList.remove('active'));
     if (paymentBtns.length > 0) paymentBtns[0].classList.add('active');
+    
+    // Mettre à jour le label
+    updateAmountGivenLabel();
 }
 
 function updateCashierBalance(amount, patientId, transactionId) {
@@ -454,10 +509,22 @@ function printReceipt() {
     const patientName = document.getElementById('cashier-patient-name').textContent;
     const total = parseFloat(document.getElementById('total-to-pay').textContent) || 0;
     const amountGiven = parseFloat(document.getElementById('amount-given').value) || 0;
-    const change = amountGiven - total;
     
+    const currencyElement = document.querySelector('.payment-method-currency.active');
+    const currency = currencyElement ? currencyElement.dataset.currency : 'HTG';
     const paymentMethodElement = document.querySelector('.payment-method.active');
     const paymentMethod = paymentMethodElement ? paymentMethodElement.dataset.method : 'Non spécifié';
+    
+    // Calculer le change selon la devise
+    let amountGivenInHTG = amountGiven;
+    let change = 0;
+    
+    if (currency === 'USD') {
+        amountGivenInHTG = amountGiven * state.exchangeRate;
+        change = amountGivenInHTG - total;
+    } else {
+        change = amountGiven - total;
+    }
     
     const selectedServices = document.querySelectorAll('.service-checkbox:checked');
     let servicesHtml = '';
@@ -499,15 +566,23 @@ function printReceipt() {
             </div>
             <div class="receipt-item">
                 <span>Montant donné:</span>
-                <span>${amountGiven} Gdes</span>
+                <span>${amountGiven} ${currency === 'USD' ? '$' : 'Gdes'}</span>
             </div>
+            ${currency === 'USD' ? `<div class="receipt-item">
+                <span>Montant donné (en Gdes):</span>
+                <span>${amountGivenInHTG.toFixed(2)} Gdes</span>
+            </div>` : ''}
             <div class="receipt-item">
                 <span>Monnaie rendue:</span>
-                <span>${change > 0 ? change : 0} Gdes</span>
+                <span>${change > 0 ? change.toFixed(2) : 0} Gdes</span>
             </div>
             <div class="receipt-item">
                 <span>Moyen de paiement:</span>
                 <span>${paymentMethod}</span>
+            </div>
+            <div class="receipt-item">
+                <span>Devise:</span>
+                <span>${currency}</span>
             </div>
             <hr>
             <div class="text-center">
@@ -584,7 +659,7 @@ function printGeneralSheet() {
                 <td>${transaction.amount} Gdes</td>
                 <td>${amountUSD.toFixed(2)} $</td>
                 <td>${transaction.status === 'paid' ? 
-                    `<span style="color:green;">Payé</span><br><small>${transaction.paymentMethod || ''}</small>` : 
+                    `<span style="color:green;">Payé</span><br><small>${transaction.paymentMethod || ''} - ${transaction.paymentCurrency || ''}</small>` : 
                     '<span style="color:red;">Non payé</span>'}</td>
                 <td>${transaction.paymentAgent || '-'}</td>
             </tr>
@@ -596,7 +671,7 @@ function printGeneralSheet() {
             <div class="text-center">
                 <h2>${document.getElementById('hospital-name-header').textContent}</h2>
                 <p>${document.getElementById('hospital-address-header').textContent}</p>
-                <h3>Fiche Générale des Transactions</h3>
+                <h3>Fiche Générale des Transactions du Jour</h3>
                 <p>Taux: 1 $ = ${state.exchangeRate} Gdes | Date: ${new Date().toLocaleDateString('fr-FR')}</p>
             </div>
             <hr>
@@ -667,7 +742,7 @@ function printGeneralSheet() {
     printWindow.document.write(`
         <html>
         <head>
-            <title>Fiche Générale - ${patientName}</title>
+            <title>Fiche Générale du Jour - ${patientName}</title>
             <style>
                 body { font-family: Arial, sans-serif; padding: 20px; }
                 .print-receipt { margin: 0 auto; }
@@ -680,6 +755,157 @@ function printGeneralSheet() {
         </head>
         <body>
             ${generalSheetContent}
+        </body>
+        </html>
+    `);
+    printWindow.document.close();
+    printWindow.print();
+}
+
+function printAllTransactions() {
+    const patientId = document.getElementById('cashier-patient-id').textContent;
+    const patientName = document.getElementById('cashier-patient-name').textContent;
+    
+    if (!patientId) {
+        alert("Veuillez d'abord rechercher un patient!");
+        return;
+    }
+    
+    // Récupérer toutes les transactions du patient (toutes dates)
+    const patientTransactions = state.transactions.filter(t => t.patientId === patientId);
+    
+    if (patientTransactions.length === 0) {
+        alert("Aucune transaction trouvée pour ce patient!");
+        return;
+    }
+    
+    // Trier par date (plus récent en premier)
+    patientTransactions.sort((a, b) => new Date(b.date) - new Date(a.date));
+    
+    // Calculer les totaux
+    let totalAmount = 0;
+    let totalPaid = 0;
+    let totalUnpaid = 0;
+    
+    let servicesHtml = '';
+    
+    patientTransactions.forEach(transaction => {
+        const amountUSD = transaction.amount / state.exchangeRate;
+        totalAmount += transaction.amount;
+        
+        if (transaction.status === 'paid') {
+            totalPaid += transaction.amount;
+        } else {
+            totalUnpaid += transaction.amount;
+        }
+        
+        servicesHtml += `
+            <tr>
+                <td>${transaction.service}</td>
+                <td>${transaction.date} ${transaction.time || ''}</td>
+                <td>${transaction.paymentDate ? transaction.paymentDate + ' ' + (transaction.paymentTime || '') : '-'}</td>
+                <td>${transaction.amount} Gdes</td>
+                <td>${amountUSD.toFixed(2)} $</td>
+                <td>${transaction.status === 'paid' ? 
+                    `<span style="color:green;">Payé</span><br><small>${transaction.paymentMethod || ''} - ${transaction.paymentCurrency || ''}</small>` : 
+                    '<span style="color:red;">Non payé</span>'}</td>
+                <td>${transaction.paymentAgent || '-'}</td>
+            </tr>
+        `;
+    });
+    
+    const allTransactionsContent = `
+        <div class="print-receipt" style="width: 210mm; margin: 0 auto;">
+            <div class="text-center">
+                <h2>${document.getElementById('hospital-name-header').textContent}</h2>
+                <p>${document.getElementById('hospital-address-header').textContent}</p>
+                <h3>Historique Complet des Transactions</h3>
+                <p>Taux actuel: 1 $ = ${state.exchangeRate} Gdes | Date d'émission: ${new Date().toLocaleDateString('fr-FR')}</p>
+            </div>
+            <hr>
+            <div style="margin-bottom: 20px;">
+                <p><strong>Patient:</strong> ${patientName}</p>
+                <p><strong>ID Patient:</strong> ${patientId}</p>
+                <p><strong>Date d'émission:</strong> ${new Date().toLocaleDateString('fr-FR')} ${new Date().toLocaleTimeString('fr-FR', {hour: '2-digit', minute:'2-digit'})}</p>
+                <p><strong>Total des transactions: ${patientTransactions.length}</strong></p>
+            </div>
+            
+            <table style="width:100%; border-collapse:collapse; margin-bottom:20px;">
+                <thead>
+                    <tr style="background:#f8f9fa;">
+                        <th style="border:1px solid #ddd; padding:8px;">Service</th>
+                        <th style="border:1px solid #ddd; padding:8px;">Date Facturation</th>
+                        <th style="border:1px solid #ddd; padding:8px;">Date Paiement</th>
+                        <th style="border:1px solid #ddd; padding:8px;">Montant (Gdes)</th>
+                        <th style="border:1px solid #ddd; padding:8px;">Montant ($)</th>
+                        <th style="border:1px solid #ddd; padding:8px;">Statut</th>
+                        <th style="border:1px solid #ddd; padding:8px;">Agent</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${servicesHtml}
+                </tbody>
+            </table>
+            
+            <div style="display:flex; justify-content:space-between; margin-top:30px;">
+                <div style="flex:1; padding:15px; background:#f8f9fa; border-radius:5px; margin-right:10px;">
+                    <h4>Récapitulatif Général</h4>
+                    <p>Total des transactions: <strong>${totalAmount} Gdes</strong></p>
+                    <p>Montant total payé: <strong style="color:green;">${totalPaid} Gdes</strong></p>
+                    <p>Montant total dû: <strong style="color:red;">${totalUnpaid} Gdes</strong></p>
+                    <p>Nombre de transactions: <strong>${patientTransactions.length}</strong></p>
+                </div>
+                <div style="flex:1; padding:15px; background:#f8f9fa; border-radius:5px; margin-left:10px;">
+                    <h4>Conversion en USD</h4>
+                    <p>Total: <strong>${(totalAmount / state.exchangeRate).toFixed(2)} $</strong></p>
+                    <p>Payé: <strong style="color:green;">${(totalPaid / state.exchangeRate).toFixed(2)} $</strong></p>
+                    <p>Dû: <strong style="color:red;">${(totalUnpaid / state.exchangeRate).toFixed(2)} $</strong></p>
+                </div>
+            </div>
+            
+            <hr style="margin:30px 0;">
+            
+            <div style="margin-top:20px;">
+                <h4>Observations:</h4>
+                <p>_________________________________________________________</p>
+                <p>_________________________________________________________</p>
+            </div>
+            
+            <div style="display:flex; justify-content:space-between; margin-top:50px;">
+                <div style="text-align:center;">
+                    <p>Signature du Caissier</p>
+                    <p style="margin-top:50px;">_________________________</p>
+                </div>
+                <div style="text-align:center;">
+                    <p>Signature du Responsable</p>
+                    <p style="margin-top:50px;">_________________________</p>
+                </div>
+            </div>
+            
+            <div class="text-center" style="margin-top:50px;">
+                <p><em>Ce document présente l'historique complet de toutes les transactions du patient.</em></p>
+                <p><small>Rapport #${'RPT' + Date.now().toString().slice(-8)}</small></p>
+            </div>
+        </div>
+    `;
+    
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(`
+        <html>
+        <head>
+            <title>Historique des Transactions - ${patientName}</title>
+            <style>
+                body { font-family: Arial, sans-serif; padding: 20px; }
+                .print-receipt { margin: 0 auto; }
+                .text-center { text-align: center; }
+                hr { border: none; border-top: 1px solid #000; margin: 10px 0; }
+                table { width: 100%; border-collapse: collapse; }
+                th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+                th { background-color: #f8f9fa; }
+            </style>
+        </head>
+        <body>
+            ${allTransactionsContent}
         </body>
         </html>
     `);
