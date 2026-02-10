@@ -1,591 +1,471 @@
-// Gestion de l'authentification et navigation
+// Gestion de l'authentification
 document.addEventListener('DOMContentLoaded', () => {
     setupLogin();
-    setupNavigation();
 });
 
 function setupLogin() {
-    const roleBtns = document.querySelectorAll('.login-role-btn');
-    roleBtns.forEach(btn => btn.addEventListener('click', function() {
-        roleBtns.forEach(b => b.classList.remove('active'));
-        this.classList.add('active');
-    }));
-
+    const loginButtons = document.querySelectorAll('.login-role-btn');
+    loginButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            loginButtons.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+        });
+    });
+    
     document.getElementById('login-form').addEventListener('submit', (e) => {
         e.preventDefault();
-        const username = document.getElementById('username').value.trim();
-        const password = document.getElementById('password').value;
-        const selectedRole = document.querySelector('.login-role-btn.active').dataset.role;
-        
-        const user = state.users.find(u => 
-            u.username === username && 
-            u.password === password && 
-            u.role === selectedRole &&
-            u.active === true
-        );
-        
-        if (!user) {
-            alert("Identifiants incorrects ou compte désactivé!");
-            return;
-        }
-        
+        handleLogin();
+    });
+}
+
+function handleLogin() {
+    const username = document.getElementById('username').value.trim();
+    const password = document.getElementById('password').value;
+    const selectedRole = document.querySelector('.login-role-btn.active').dataset.role;
+    
+    // Vérifier les identifiants
+    const user = state.users.find(u => 
+        u.username === username && 
+        u.password === password && 
+        u.role === selectedRole &&
+        u.active === true
+    );
+    
+    if (user) {
+        // Connexion réussie
         state.currentUser = user;
-        state.currentRole = selectedRole;
+        state.currentRole = user.role;
         
-        document.getElementById('current-username').textContent = user.name;
-        document.getElementById('current-user-role').textContent = user.role;
-        document.getElementById('dashboard-role').textContent = user.role.charAt(0).toUpperCase() + user.role.slice(1);
+        // Enregistrer la session
+        localStorage.setItem('currentSession', JSON.stringify({
+            userId: user.id,
+            username: user.username,
+            role: user.role,
+            loginTime: new Date().toISOString()
+        }));
         
+        // Mettre à jour l'interface
+        updateUIAfterLogin();
+        
+        // Afficher l'application principale
         document.getElementById('login-screen').classList.add('hidden');
         document.getElementById('main-app').classList.remove('hidden');
         
-        setupRoleBasedNavigation();
-        updateRoleDashboard();
+        // Mettre à jour l'en-tête
+        document.getElementById('current-username').textContent = user.name;
+        document.getElementById('current-user-role').textContent = state.roles[user.role].name;
+        document.getElementById('dashboard-role').textContent = state.roles[user.role].name;
         
-        updateConsultationTypesSelect();
-        updateVitalsInputs();
-        updateLabAnalysesSelect();
-        updateTodayPatientsList();
-        updateExternalServicesSelect();
-        updateExternalServicesOptions();
-        checkUnreadMessages();
-        loadDoctorsForAppointments();
-        updateDoctorConsultationTypes();
+        // Mettre à jour l'affichage du logo
         updateLogoDisplay();
         
-        // Initialiser d'autres modules
-        if (typeof updateMedicationStock === 'function') updateMedicationStock();
-        if (typeof updateMessageRecipients === 'function') updateMessageRecipients();
-        if (typeof loadAppointmentsList === 'function') loadAppointmentsList();
-        if (typeof loadDoctorAppointments === 'function') loadDoctorAppointments();
-        if (typeof updateMedicationsSettingsList === 'function') updateMedicationsSettingsList();
+        // Charger le tableau de bord en fonction du rôle
+        loadRoleSpecificDashboard();
         
-        // Initialiser les nouvelles fonctionnalités d'administration
-        if (typeof updateAdminExtendedDisplay === 'function') updateAdminExtendedDisplay();
-        if (typeof updateUserTransactionTotals === 'function') updateUserTransactionTotals();
-    });
-
-    document.getElementById('logout-btn').addEventListener('click', () => {
-        if (confirm("Voulez-vous vous déconnecter?")) {
-            location.reload();
+        // Appliquer les restrictions d'interface selon le rôle
+        applyRoleBasedUI();
+        
+        // Initialiser les messages
+        updateMessageBadge();
+        
+        // Vérifier l'expiration des privilèges
+        checkPrivilegeExpirationAll();
+        
+        // Initialiser les fonctionnalités spécifiques au rôle
+        if (user.role === 'responsible') {
+            setupResponsibleFeatures();
         }
-    });
-}
-
-function setupRoleBasedNavigation() {
-    const tabs = document.querySelectorAll('.nav-tab');
-    const role = state.currentRole;
-    
-    tabs.forEach(tab => {
-        const target = tab.dataset.target;
         
-        if (role === 'admin') {
-            tab.classList.remove('hidden');
-        } else if (role === 'responsible') {
-            // Le responsable a accès à tout sauf paramètres
-            if (target === 'settings') {
-                tab.classList.add('hidden');
-            } else {
-                tab.classList.remove('hidden');
-            }
-        } else if (role === 'secretary') {
-            if (['dashboard', 'secretary', 'messaging'].includes(target)) {
-                tab.classList.remove('hidden');
-            } else {
-                tab.classList.add('hidden');
-            }
-        } else if (role === 'cashier') {
-            if (['dashboard', 'cashier', 'messaging'].includes(target)) {
-                tab.classList.remove('hidden');
-            } else {
-                tab.classList.add('hidden');
-            }
-        } else if (role === 'nurse') {
-            if (['dashboard', 'nurse', 'messaging'].includes(target)) {
-                tab.classList.remove('hidden');
-            } else {
-                tab.classList.add('hidden');
-            }
-        } else if (role === 'doctor') {
-            if (['dashboard', 'doctor', 'messaging'].includes(target)) {
-                tab.classList.remove('hidden');
-            } else {
-                tab.classList.add('hidden');
-            }
-        } else if (role === 'lab') {
-            if (['dashboard', 'laboratory', 'messaging'].includes(target)) {
-                tab.classList.remove('hidden');
-            } else {
-                tab.classList.add('hidden');
-            }
-        } else if (role === 'pharmacy') {
-            if (['dashboard', 'pharmacy', 'messaging'].includes(target)) {
-                tab.classList.remove('hidden');
-            } else {
-                tab.classList.add('hidden');
-            }
-        }
-    });
-    
-    const visibleTabs = document.querySelectorAll('.nav-tab:not(.hidden)');
-    if (visibleTabs.length > 0) {
-        visibleTabs.forEach(t => t.classList.remove('active'));
-        visibleTabs[0].classList.add('active');
+        console.log(`Utilisateur ${user.name} (${user.role}) connecté avec succès`);
         
-        document.querySelectorAll('.content').forEach(c => c.classList.remove('active'));
-        document.getElementById(visibleTabs[0].dataset.target).classList.add('active');
+    } else {
+        alert("Identifiants incorrects ou rôle non autorisé!");
     }
 }
 
-function setupNavigation() {
-    const tabs = document.querySelectorAll('.nav-tab');
-    tabs.forEach(tab => {
-        tab.addEventListener('click', function() {
-            tabs.forEach(t => t.classList.remove('active'));
-            this.classList.add('active');
-            document.querySelectorAll('.content').forEach(c => c.classList.remove('active'));
-            document.getElementById(this.dataset.target).classList.add('active');
-            
-            const target = this.dataset.target;
-            if (target === 'dashboard') {
-                updateRoleDashboard();
-            } else if (target === 'secretary') {
-                updateTodayPatientsList();
-                updateConsultationTypesSelect();
-                if (typeof loadAppointmentsList === 'function') loadAppointmentsList();
-            } else if (target === 'administration') {
-                if (typeof updateAdminStats === 'function') updateAdminStats();
-                if (typeof updateCharts === 'function') updateCharts();
-                if (typeof updateAdminExtendedDisplay === 'function') updateAdminExtendedDisplay();
-                if (typeof updateUserTransactionTotals === 'function') updateUserTransactionTotals();
-            } else if (target === 'pharmacy') {
-                if (typeof updateMedicationStock === 'function') updateMedicationStock();
-            } else if (target === 'messaging') {
-                if (typeof loadConversations === 'function') loadConversations();
-                updateMessageBadge();
-            } else if (target === 'doctor') {
-                if (typeof loadDoctorAppointments === 'function') loadDoctorAppointments();
-            } else if (target === 'settings') {
-                if (typeof updateMedicationsSettingsList === 'function') updateMedicationsSettingsList();
-            }
-        });
-    });
+function updateUIAfterLogin() {
+    // Mettre à jour le nom de l'hôpital dans l'en-tête
+    document.getElementById('hospital-name-header').textContent = state.hospitalName;
+    document.getElementById('hospital-address-header').textContent = state.hospitalAddress;
+    document.getElementById('hospital-name-login').textContent = state.hospitalName;
 }
 
-function updateRoleDashboard() {
-    const container = document.getElementById('role-dashboard-content');
+function logout() {
+    // Enregistrer l'activité de déconnexion
+    const activity = {
+        id: 'ACT' + Date.now(),
+        action: 'logout',
+        user: state.currentUser.username,
+        timestamp: new Date().toISOString(),
+        details: `Déconnexion de ${state.currentUser.name}`
+    };
+    
+    if (!state.reports) state.reports = [];
+    state.reports.push(activity);
+    
+    // Nettoyer la session
+    localStorage.removeItem('currentSession');
+    
+    // Réinitialiser l'état
+    state.currentUser = null;
+    state.currentRole = null;
+    
+    // Revenir à l'écran de connexion
+    document.getElementById('login-screen').classList.remove('hidden');
+    document.getElementById('main-app').classList.add('hidden');
+    
+    // Réinitialiser le formulaire de connexion
+    document.getElementById('login-form').reset();
+    document.querySelectorAll('.login-role-btn').forEach(btn => btn.classList.remove('active'));
+    document.querySelector('.login-role-btn[data-role="admin"]').classList.add('active');
+    
+    console.log("Déconnexion réussie");
+}
+
+// Vérifier la session existante au chargement
+function checkExistingSession() {
+    const session = localStorage.getItem('currentSession');
+    if (session) {
+        try {
+            const sessionData = JSON.parse(session);
+            const user = state.users.find(u => u.id === sessionData.userId);
+            
+            if (user) {
+                // Vérifier si la session a expiré (8 heures)
+                const loginTime = new Date(sessionData.loginTime);
+                const now = new Date();
+                const hoursDiff = (now - loginTime) / (1000 * 60 * 60);
+                
+                if (hoursDiff < 8) {
+                    // Session valide, reconnecter automatiquement
+                    state.currentUser = user;
+                    state.currentRole = user.role;
+                    
+                    document.getElementById('login-screen').classList.add('hidden');
+                    document.getElementById('main-app').classList.remove('hidden');
+                    
+                    document.getElementById('current-username').textContent = user.name;
+                    document.getElementById('current-user-role').textContent = state.roles[user.role].name;
+                    document.getElementById('dashboard-role').textContent = state.roles[user.role].name;
+                    
+                    updateUIAfterLogin();
+                    loadRoleSpecificDashboard();
+                    applyRoleBasedUI();
+                    
+                    if (user.role === 'responsible') {
+                        setupResponsibleFeatures();
+                    }
+                    
+                    console.log(`Session restaurée pour ${user.name}`);
+                    return true;
+                }
+            }
+        } catch (error) {
+            console.error("Erreur lors de la restauration de la session:", error);
+        }
+    }
+    return false;
+}
+
+// Vérifier les permissions
+function hasPermission(permission) {
+    if (!state.currentRole || !state.roles[state.currentRole]) {
+        return false;
+    }
+    return state.roles[state.currentRole][permission] === true;
+}
+
+// Charger le tableau de bord spécifique au rôle
+function loadRoleSpecificDashboard() {
     const role = state.currentRole;
+    const container = document.getElementById('role-dashboard-content');
+    
+    if (!container) return;
+    
+    let dashboardHTML = '';
+    
+    switch(role) {
+        case 'admin':
+            dashboardHTML = generateAdminDashboard();
+            break;
+        case 'responsible':
+            dashboardHTML = generateResponsibleDashboard();
+            break;
+        case 'secretary':
+            dashboardHTML = generateSecretaryDashboard();
+            break;
+        case 'cashier':
+            dashboardHTML = generateCashierDashboard();
+            break;
+        case 'nurse':
+            dashboardHTML = generateNurseDashboard();
+            break;
+        case 'doctor':
+            dashboardHTML = generateDoctorDashboard();
+            break;
+        case 'lab':
+            dashboardHTML = generateLabDashboard();
+            break;
+        case 'pharmacy':
+            dashboardHTML = generatePharmacyDashboard();
+            break;
+        default:
+            dashboardHTML = '<p>Tableau de bord non disponible pour ce rôle.</p>';
+    }
+    
+    container.innerHTML = dashboardHTML;
+    
+    // Initialiser les événements du tableau de bord
+    initDashboardEvents(role);
+}
+
+// Générer le tableau de bord pour le responsable
+function generateResponsibleDashboard() {
+    const today = new Date().toISOString().split('T')[0];
+    const todayTransactions = state.transactions.filter(t => t.date === today);
+    const todayAmount = todayTransactions.reduce((sum, t) => sum + t.amount, 0);
+    
+    const pendingExtractions = state.pettyCashTransactions.filter(t => 
+        t.status === 'pending' || t.status === 'requested'
+    ).length;
+    
+    return `
+        <div class="responsible-dashboard-stats">
+            <div class="responsible-stat-card">
+                <i class="fas fa-money-bill-wave fa-2x" style="color:#1a6bca;"></i>
+                <h4>${todayAmount.toLocaleString()} Gdes</h4>
+                <p>Recettes aujourd'hui</p>
+            </div>
+            
+            <div class="responsible-stat-card">
+                <i class="fas fa-cash-register fa-2x" style="color:#28a745;"></i>
+                <h4>${state.pettyCash.toLocaleString()} Gdes</h4>
+                <p>Petite caisse disponible</p>
+            </div>
+            
+            <div class="responsible-stat-card">
+                <i class="fas fa-clock fa-2x" style="color:#ffc107;"></i>
+                <h4>${pendingExtractions}</h4>
+                <p>Extractions en attente</p>
+            </div>
+            
+            <div class="responsible-stat-card">
+                <i class="fas fa-users fa-2x" style="color:#17a2b8;"></i>
+                <h4>${state.patients.filter(p => p.registrationDate === today).length}</h4>
+                <p>Nouveaux patients</p>
+            </div>
+        </div>
+        
+        <div class="card mt-3">
+            <h3><i class="fas fa-exclamation-circle"></i> Actions Requises</h3>
+            <div id="responsible-actions-list">
+                ${generateResponsibleActionsList()}
+            </div>
+        </div>
+        
+        <div class="card mt-3">
+            <h3><i class="fas fa-history"></i> Dernières Transactions</h3>
+            <div class="table-container">
+                <table class="simplified-table">
+                    <thead>
+                        <tr>
+                            <th>Heure</th>
+                            <th>Patient</th>
+                            <th>Service</th>
+                            <th>Montant</th>
+                            <th>Statut</th>
+                        </tr>
+                    </thead>
+                    <tbody id="recent-transactions-simple"></tbody>
+                </table>
+            </div>
+        </div>
+        
+        <div class="card mt-3">
+            <h3><i class="fas fa-wallet"></i> Petite Caisse - Dernières Extractions</h3>
+            <div id="recent-petty-cash-transactions"></div>
+            <button class="btn btn-primary mt-2" onclick="showPettyCashManagement()">
+                <i class="fas fa-cog"></i> Gérer la petite caisse
+            </button>
+        </div>
+    `;
+}
+
+function generateResponsibleActionsList() {
+    let actions = [];
+    
+    // Vérifier les extractions en attente
+    const pendingExtractions = state.pettyCashTransactions.filter(t => 
+        t.status === 'pending' && t.requestedBy === state.currentUser.username
+    );
+    
+    if (pendingExtractions.length > 0) {
+        actions.push(`<div class="alert alert-warning">
+            <i class="fas fa-clock"></i> ${pendingExtractions.length} extraction(s) en attente d'approbation
+        </div>`);
+    }
+    
+    // Vérifier le solde faible de la petite caisse
+    if (state.pettyCash < 10000) {
+        actions.push(`<div class="alert alert-danger">
+            <i class="fas fa-exclamation-triangle"></i> Solde de la petite caisse faible: ${state.pettyCash.toLocaleString()} Gdes
+        </div>`);
+    }
+    
+    // Vérifier les transactions non payées importantes
+    const largeUnpaid = state.transactions.filter(t => 
+        t.status === 'unpaid' && t.amount > 5000
+    );
+    
+    if (largeUnpaid.length > 0) {
+        actions.push(`<div class="alert alert-info">
+            <i class="fas fa-money-bill-wave"></i> ${largeUnpaid.length} transaction(s) importante(s) non payée(s)
+        </div>`);
+    }
+    
+    if (actions.length === 0) {
+        return '<p class="text-muted">Aucune action requise pour le moment.</p>';
+    }
+    
+    return actions.join('');
+}
+
+function initDashboardEvents(role) {
+    if (role === 'responsible') {
+        // Charger les transactions récentes
+        updateRecentTransactionsSimple();
+        updateRecentPettyCashTransactions();
+        
+        // Mettre à jour périodiquement
+        setInterval(() => {
+            updateRecentTransactionsSimple();
+            updateRecentPettyCashTransactions();
+            document.getElementById('responsible-actions-list').innerHTML = generateResponsibleActionsList();
+        }, 30000);
+    }
+}
+
+function updateRecentTransactionsSimple() {
+    const container = document.getElementById('recent-transactions-simple');
+    if (!container) return;
+    
+    const recent = [...state.transactions]
+        .sort((a, b) => new Date(b.date + ' ' + b.time) - new Date(a.date + ' ' + a.time))
+        .slice(0, 10);
     
     let html = '';
-    
-    if (role === 'admin' || role === 'responsible') {
-        const totalCredit = Object.values(state.creditAccounts || {}).reduce((sum, acc) => sum + (acc.balance || 0), 0);
-        
-        html = `
-            <div class="stats-container">
-                <div class="stat-card clickable-stat" onclick="showSection('secretary')">
-                    <div class="stat-icon" style="background:#1a6bca"><i class="fas fa-user-tie"></i></div>
-                    <div class="stat-info"><h3>${state.patients.length}</h3><p>Patients enregistrés</p></div>
-                </div>
-                <div class="stat-card clickable-stat" onclick="showSection('administration')">
-                    <div class="stat-icon" style="background:#28a745"><i class="fas fa-money-bill-wave"></i></div>
-                    <div class="stat-info">
-                        <h3>${state.transactions.filter(t => t.status === 'paid' && !t.isCredit).reduce((sum, t) => sum + t.amount, 0)}</h3>
-                        <p>Revenus totaux (Gdes)</p>
-                    </div>
-                </div>
-                <div class="stat-card clickable-stat" onclick="showSection('pharmacy')">
-                    <div class="stat-icon" style="background:#dc3545"><i class="fas fa-pills"></i></div>
-                    <div class="stat-info">
-                        <h3>${state.medicationStock.filter(m => m.quantity <= m.alertThreshold).length}</h3>
-                        <p>Médicaments en alerte</p>
-                    </div>
-                </div>
-                <div class="stat-card clickable-stat" onclick="showSection('messaging')">
-                    <div class="stat-icon" style="background:#17a2b8"><i class="fas fa-comments"></i></div>
-                    <div class="stat-info">
-                        <h3>${state.unreadMessages}</h3>
-                        <p>Messages non lus</p>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="admin-stats-grid mt-3">
-                <div class="admin-stat-card">
-                    <h3><i class="fas fa-cash-register"></i> Caisses</h3>
-                    <p>Caisse principale: <strong>${(state.mainCash || 0).toLocaleString()} Gdes</strong></p>
-                    <p>Petite caisse: <strong>${(state.pettyCash || 0).toLocaleString()} Gdes</strong></p>
-                    <p>Crédits patients: <strong>${totalCredit.toLocaleString()} Gdes</strong></p>
-                </div>
-                
-                <div class="admin-stat-card">
-                    <h3><i class="fas fa-chart-line"></i> Aujourd'hui</h3>
-                    <p>Patients: <strong>${state.patients.filter(p => p.registrationDate === new Date().toISOString().split('T')[0]).length}</strong></p>
-                    <p>Transactions: <strong>${state.transactions.filter(t => t.date === new Date().toISOString().split('T')[0]).length}</strong></p>
-                    <p>Revenus: <strong>${state.transactions.filter(t => t.date === new Date().toISOString().split('T')[0] && t.status === 'paid' && !t.isCredit).reduce((sum, t) => sum + t.amount, 0)} Gdes</strong></p>
-                </div>
-            </div>
-            
-            <div class="card mt-3">
-                <h3>Activité récente</h3>
-                <div class="table-container">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Heure</th>
-                                <th>Action</th>
-                                <th>Utilisateur</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr><td>10:30</td><td>Consultation enregistrée</td><td>doctor</td></tr>
-                            <tr><td>10:15</td><td>Paiement effectué</td><td>cashier</td></tr>
-                            <tr><td>09:45</td><td>Nouveau patient</td><td>secretary</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
+    recent.forEach(t => {
+        html += `
+            <tr>
+                <td>${t.time}</td>
+                <td>${t.patientName.substring(0, 20)}${t.patientName.length > 20 ? '...' : ''}</td>
+                <td>${t.service.substring(0, 20)}${t.service.length > 20 ? '...' : ''}</td>
+                <td>${t.amount} Gdes</td>
+                <td><span class="${t.status === 'paid' ? 'status-paid' : 'status-unpaid'}">${t.status === 'paid' ? 'Payé' : 'Non payé'}</span></td>
+            </tr>
         `;
-    } else if (role === 'secretary') {
-        const today = new Date().toISOString().split('T')[0];
-        const todayPatients = state.patients.filter(p => p.registrationDate === today);
-        
-        html = `
-            <div class="stats-container">
-                <div class="stat-card">
-                    <div class="stat-icon" style="background:#1a6bca"><i class="fas fa-user-plus"></i></div>
-                    <div class="stat-info"><h3>${todayPatients.length}</h3><p>Patients aujourd'hui</p></div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-icon" style="background:#28a745"><i class="fas fa-file-invoice-dollar"></i></div>
-                    <div class="stat-info">
-                        <h3>${state.transactions.filter(t => t.type === 'external' && t.status === 'unpaid').length}</h3>
-                        <p>Services externes en attente</p>
-                    </div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-icon" style="background:#ffc107"><i class="fas fa-calendar-alt"></i></div>
-                    <div class="stat-info">
-                        <h3>${state.appointments.filter(a => a.date >= today).length}</h3>
-                        <p>Rendez-vous programmés</p>
-                    </div>
-                </div>
-                <div class="stat-card clickable-stat" onclick="showSection('messaging')">
-                    <div class="stat-icon" style="background:#17a2b8"><i class="fas fa-comments"></i></div>
-                    <div class="stat-info">
-                        <h3>${state.unreadMessages}</h3>
-                        <p>Messages non lus</p>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="card mt-3">
-                <h3>Patients récemment enregistrés</h3>
-                <div class="table-container">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>ID</th>
-                                <th>Nom</th>
-                                <th>Heure</th>
-                                <th>Type</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${todayPatients.slice(0, 5).map(patient => `
-                                <tr>
-                                    <td>${patient.id}</td>
-                                    <td>${patient.fullName}</td>
-                                    <td>${patient.registrationTime}</td>
-                                    <td>${patient.type}</td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        `;
-    } else if (role === 'cashier') {
-        const today = new Date().toISOString().split('T')[0];
-        const todayTransactions = state.transactions.filter(t => 
-            t.status === 'paid' && 
-            t.paymentDate === today
-        );
-        const todayRevenue = todayTransactions.reduce((sum, t) => sum + t.amount, 0);
-        
-        html = `
-            <div class="stats-container">
-                <div class="stat-card">
-                    <div class="stat-icon" style="background:#28a745"><i class="fas fa-money-bill-wave"></i></div>
-                    <div class="stat-info"><h3>${todayRevenue}</h3><p>Encaissements aujourd'hui (Gdes)</p></div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-icon" style="background:#1a6bca"><i class="fas fa-users"></i></div>
-                    <div class="stat-info"><h3>${new Set(todayTransactions.map(t => t.patientId)).size}</h3><p>Patients servis</p></div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-icon" style="background:#ffc107"><i class="fas fa-exclamation-triangle"></i></div>
-                    <div class="stat-info"><h3>${state.transactions.filter(t => t.status === 'unpaid').length}</h3><p>Services impayés</p></div>
-                </div>
-                <div class="stat-card clickable-stat" onclick="showSection('messaging')">
-                    <div class="stat-icon" style="background:#17a2b8"><i class="fas fa-comments"></i></div>
-                    <div class="stat-info">
-                        <h3>${state.unreadMessages}</h3>
-                        <p>Messages non lus</p>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="card mt-3">
-                <h3>Derniers paiements</h3>
-                <div class="table-container">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Heure</th>
-                                <th>Patient</th>
-                                <th>Montant</th>
-                                <th>Méthode</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${todayTransactions.slice(0, 5).map(transaction => `
-                                <tr>
-                                    <td>${transaction.paymentTime}</td>
-                                    <td>${transaction.patientName}</td>
-                                    <td>${transaction.amount} Gdes</td>
-                                    <td>${transaction.paymentMethod}</td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        `;
-    } else if (role === 'nurse') {
-        const today = new Date().toISOString().split('T')[0];
-        const todayVitals = state.vitals.filter(v => v.date === today);
-        
-        html = `
-            <div class="stats-container">
-                <div class="stat-card">
-                    <div class="stat-icon" style="background:#17a2b8"><i class="fas fa-heartbeat"></i></div>
-                    <div class="stat-info"><h3>${todayVitals.length}</h3><p>Signes vitaux aujourd'hui</p></div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-icon" style="background:#1a6bca"><i class="fas fa-user-injured"></i></div>
-                    <div class="stat-info"><h3>${new Set(todayVitals.map(v => v.patientId)).size}</h3><p>Patients vus</p></div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-icon" style="background:#28a745"><i class="fas fa-bell"></i></div>
-                    <div class="stat-info"><h3>${state.messages.filter(m => m.recipient === state.currentUser.username && !m.read).length}</h3><p>Notifications</p></div>
-                </div>
-                <div class="stat-card clickable-stat" onclick="showSection('messaging')">
-                    <div class="stat-icon" style="background:#17a2b8"><i class="fas fa-comments"></i></div>
-                    <div class="stat-info">
-                        <h3>${state.unreadMessages}</h3>
-                        <p>Messages non lus</p>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="card mt-3">
-                <h3>Signes vitaux récents</h3>
-                <div class="table-container">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Patient</th>
-                                <th>Heure</th>
-                                <th>Tension</th>
-                                <th>Température</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${todayVitals.slice(0, 5).map(record => {
-                                const patient = state.patients.find(p => p.id === record.patientId);
-                                const tension = record.values['Tension artérielle'];
-                                const temperature = record.values['Température'];
-                                return `
-                                    <tr>
-                                        <td>${patient ? patient.fullName : record.patientId}</td>
-                                        <td>${record.time}</td>
-                                        <td>${tension ? tension.value + ' ' + tension.unit : '-'}</td>
-                                        <td>${temperature ? temperature.value + ' ' + temperature.unit : '-'}</td>
-                                    </tr>
-                                `;
-                            }).join('')}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        `;
-    } else if (role === 'doctor') {
-        const today = new Date().toISOString().split('T')[0];
-        const todayConsultations = state.consultations.filter(c => c.date === today && c.doctor === state.currentUser.username);
-        
-        html = `
-            <div class="stats-container">
-                <div class="stat-card">
-                    <div class="stat-icon" style="background:#1a6bca"><i class="fas fa-stethoscope"></i></div>
-                    <div class="stat-info"><h3>${todayConsultations.length}</h3><p>Consultations aujourd'hui</p></div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-icon" style="background:#28a745"><i class="fas fa-prescription"></i></div>
-                    <div class="stat-info"><h3>${state.transactions.filter(t => t.type === 'medication' && t.createdBy === state.currentUser.username).length}</h3><p>Prescriptions</p></div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-icon" style="background:#ffc107"><i class="fas fa-calendar-alt"></i></div>
-                    <div class="stat-info"><h3>${state.appointments.filter(a => a.doctor === state.currentUser.username && a.date >= today).length}</h3><p>Rendez-vous</p></div>
-                </div>
-                <div class="stat-card clickable-stat" onclick="showSection('messaging')">
-                    <div class="stat-icon" style="background:#17a2b8"><i class="fas fa-comments"></i></div>
-                    <div class="stat-info">
-                        <h3>${state.unreadMessages}</h3>
-                        <p>Messages non lus</p>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="card mt-3">
-                <h3>Consultations récentes</h3>
-                <div class="table-container">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Patient</th>
-                                <th>Heure</th>
-                                <th>Diagnostic</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${todayConsultations.slice(0, 5).map(consultation => `
-                                <tr>
-                                    <td>${consultation.patientName}</td>
-                                    <td>${consultation.time}</td>
-                                    <td>${consultation.diagnosis.substring(0, 50)}${consultation.diagnosis.length > 50 ? '...' : ''}</td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        `;
-    } else if (role === 'lab') {
-        const pendingAnalyses = state.transactions.filter(t => 
-            t.type === 'lab' && 
-            t.status === 'paid' && 
-            (!t.labStatus || t.labStatus !== 'completed')
-        );
-        
-        html = `
-            <div class="stats-container">
-                <div class="stat-card">
-                    <div class="stat-icon" style="background:#dc3545"><i class="fas fa-flask"></i></div>
-                    <div class="stat-info"><h3>${pendingAnalyses.length}</h3><p>Analyses en attente</p></div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-icon" style="background:#28a745"><i class="fas fa-check-circle"></i></div>
-                    <div class="stat-info"><h3>${state.transactions.filter(t => t.type === 'lab' && t.labStatus === 'completed').length}</h3><p>Analyses complétées</p></div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-icon" style="background:#17a2b8"><i class="fas fa-bell"></i></div>
-                    <div class="stat-info"><h3>${state.messages.filter(m => m.recipient === state.currentUser.username && !m.read && m.type === 'lab_result').length}</h3><p>Résultats à communiquer</p></div>
-                </div>
-                <div class="stat-card clickable-stat" onclick="showSection('messaging')">
-                    <div class="stat-icon" style="background:#17a2b8"><i class="fas fa-comments"></i></div>
-                    <div class="stat-info">
-                        <h3>${state.unreadMessages}</h3>
-                        <p>Messages non lus</p>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="card mt-3">
-                <h3>Analyses urgentes</h3>
-                <div id="pending-analyses-list-dashboard"></div>
-            </div>
-        `;
-        
-        const urgentContainer = document.getElementById('pending-analyses-list-dashboard');
-        if (pendingAnalyses.length === 0) {
-            urgentContainer.innerHTML = '<p>Aucune analyse en attente.</p>';
-        } else {
-            let urgentHtml = '<table class="table-container"><thead><tr><th>Patient</th><th>Analyse</th><th>Depuis</th></tr></thead><tbody>';
-            
-            pendingAnalyses.slice(0, 5).forEach(analysis => {
-                const hoursAgo = Math.floor((Date.now() - new Date(analysis.date + ' ' + analysis.time)) / (1000 * 60 * 60));
-                urgentHtml += `
-                    <tr>
-                        <td>${analysis.patientName}</td>
-                        <td>${analysis.service}</td>
-                        <td>${hoursAgo} heure(s)</td>
-                    </tr>
-                `;
-            });
-            
-            urgentHtml += '</tbody></table>';
-            urgentContainer.innerHTML = urgentHtml;
-        }
-    } else if (role === 'pharmacy') {
-        const lowStock = state.medicationStock.filter(med => med.quantity <= med.alertThreshold);
-        const pendingDeliveries = state.transactions.filter(t => 
-            t.type === 'medication' && 
-            t.status === 'paid' && 
-            (!t.deliveryStatus || t.deliveryStatus !== 'delivered')
-        );
-        
-        html = `
-            <div class="stats-container">
-                <div class="stat-card">
-                    <div class="stat-icon" style="background:#ffc107"><i class="fas fa-exclamation-triangle"></i></div>
-                    <div class="stat-info"><h3>${lowStock.length}</h3><p>Médicaments en alerte</p></div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-icon" style="background:#17a2b8"><i class="fas fa-truck"></i></div>
-                    <div class="stat-info"><h3>${pendingDeliveries.length}</h3><p>Livraisons en attente</p></div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-icon" style="background:#28a745"><i class="fas fa-capsules"></i></div>
-                    <div class="stat-info"><h3>${state.medicationStock.reduce((sum, med) => sum + med.quantity, 0)}</h3><p>Médicaments en stock</p></div>
-                </div>
-                <div class="stat-card clickable-stat" onclick="showSection('messaging')">
-                    <div class="stat-icon" style="background:#17a2b8"><i class="fas fa-comments"></i></div>
-                    <div class="stat-info">
-                        <h3>${state.unreadMessages}</h3>
-                        <p>Messages non lus</p>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="card mt-3">
-                <h3>Médicaments en rupture de stock</h3>
-                <div id="low-stock-dashboard"></div>
-            </div>
-        `;
-        
-        const lowStockContainer = document.getElementById('low-stock-dashboard');
-        const outOfStock = lowStock.filter(med => med.quantity === 0);
-        
-        if (outOfStock.length === 0) {
-            lowStockContainer.innerHTML = '<p>Aucun médicament en rupture de stock.</p>';
-        } else {
-            let stockHtml = '<table class="table-container"><thead><tr><th>Médicament</th><th>Forme</th><th>Dernière commande</th></tr></thead><tbody>';
-            
-            outOfStock.slice(0, 5).forEach(med => {
-                stockHtml += `
-                    <tr class="out-of-stock">
-                        <td>${med.name}</td>
-                        <td>${med.form}</td>
-                        <td>Il y a 7 jours</td>
-                    </tr>
-                `;
-            });
-            
-            stockHtml += '</tbody></table>';
-            lowStockContainer.innerHTML = stockHtml;
-        }
-    }
+    });
     
     container.innerHTML = html;
 }
+
+function updateRecentPettyCashTransactions() {
+    const container = document.getElementById('recent-petty-cash-transactions');
+    if (!container) return;
+    
+    const recent = [...state.pettyCashTransactions]
+        .sort((a, b) => new Date(b.date + ' ' + b.time) - new Date(a.date + ' ' + a.time))
+        .slice(0, 5);
+    
+    if (recent.length === 0) {
+        container.innerHTML = '<p class="text-muted">Aucune extraction récente.</p>';
+        return;
+    }
+    
+    let html = '<div class="table-container"><table class="simplified-table">';
+    html += '<thead><tr><th>Date</th><th>Montant</th><th>Raison</th><th>Statut</th></tr></thead><tbody>';
+    
+    recent.forEach(t => {
+        html += `
+            <tr>
+                <td>${t.date} ${t.time}</td>
+                <td>${t.amount} Gdes</td>
+                <td>${t.reason.substring(0, 30)}${t.reason.length > 30 ? '...' : ''}</td>
+                <td><span class="extraction-status status-${t.status}">${
+                    t.status === 'approved' ? 'Approuvé' : 
+                    t.status === 'pending' ? 'En attente' :
+                    t.status === 'rejected' ? 'Rejeté' : 'Complété'
+                }</span></td>
+            </tr>
+        `;
+    });
+    
+    html += '</tbody></table></div>';
+    container.innerHTML = html;
+}
+
+// Appliquer les restrictions d'interface selon le rôle
+function applyRoleBasedUI() {
+    const role = state.currentRole;
+    
+    // Masquer les onglets non autorisés
+    document.querySelectorAll('.nav-tab').forEach(tab => {
+        const target = tab.dataset.target;
+        
+        switch(target) {
+            case 'settings':
+                if (!hasPermission('canManageSettings')) {
+                    tab.style.display = 'none';
+                } else {
+                    tab.style.display = 'flex';
+                }
+                break;
+                
+            case 'administration':
+                if (!hasPermission('canManageAdministration')) {
+                    tab.style.display = 'none';
+                } else {
+                    tab.style.display = 'flex';
+                }
+                break;
+                
+            default:
+                tab.style.display = 'flex';
+        }
+    });
+    
+    // Appliquer les classes CSS pour les contrôles en lecture seule
+    if (role === 'responsible') {
+        document.querySelectorAll('.btn-danger, .btn-warning').forEach(btn => {
+            if (btn.textContent.includes('Supprimer') || btn.textContent.includes('Modifier')) {
+                btn.classList.add('hidden-for-responsible');
+            }
+        });
+        
+        // Rendre les champs de formulaire en lecture seule dans l'administration
+        document.querySelectorAll('#administration input, #administration select, #administration textarea').forEach(input => {
+            if (!input.classList.contains('no-readonly')) {
+                input.classList.add('readonly-field');
+                input.disabled = true;
+            }
+        });
+    }
+    
+    // Mettre à jour le titre de l'administration selon le rôle
+    if (role === 'responsible') {
+        const adminTitle = document.querySelector('#administration .section-title');
+        if (adminTitle) {
+            adminTitle.innerHTML = '<i class="fas fa-chart-bar"></i> Direction - Vue d\'ensemble';
+        }
+    }
+}
+
+// Initialiser au chargement
+document.addEventListener('DOMContentLoaded', () => {
+    if (checkExistingSession()) {
+        console.log("Session existante restaurée");
+    }
+    
+    // Gestionnaire de déconnexion
+    document.getElementById('logout-btn')?.addEventListener('click', logout);
+});

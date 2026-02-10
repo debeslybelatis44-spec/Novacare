@@ -22,7 +22,8 @@ function initApp() {
     if (!state.creditAccounts) state.creditAccounts = {};
     if (!state.cashierBalances) state.cashierBalances = {};
     if (!state.mainCash) state.mainCash = 1000000;
-    if (!state.pettyCash) state.pettyCash = 0;
+    if (!state.pettyCash) state.pettyCash = 50000;
+    if (!state.pettyCashTransactions) state.pettyCashTransactions = [];
     if (!state.reports) state.reports = [];
     
     // Initialiser les transactions par utilisateur
@@ -55,7 +56,12 @@ function initApp() {
         setupSecretary();
     }
     
-    console.log("Nouvelles fonctionnalités d'administration initialisées!");
+    // Initialiser les fonctionnalités responsables si l'utilisateur est connecté
+    if (state.currentRole === 'responsible' && typeof setupResponsibleFeatures === 'function') {
+        setupResponsibleFeatures();
+    }
+    
+    console.log("Toutes les fonctionnalités initialisées!");
 }
 
 function initializeUserTransactions() {
@@ -71,11 +77,20 @@ function initializeUserTransactions() {
 
 // Fonctions globales pour le système
 window.selectTransactionForEdit = function(transactionId) {
+    if (state.currentRole === 'responsible') {
+        alert("Vous n'avez pas la permission de modifier les transactions!");
+        return;
+    }
     document.getElementById('selected-transaction-id').value = transactionId;
     alert(`Transaction ${transactionId} sélectionnée pour modification`);
 };
 
 window.editUserTransactions = function(username) {
+    if (state.currentRole === 'responsible') {
+        alert("Vous n'avez pas la permission de modifier les transactions utilisateur!");
+        return;
+    }
+    
     const user = state.users.find(u => u.username === username);
     if (!user) {
         alert("Utilisateur non trouvé!");
@@ -117,6 +132,11 @@ window.checkAdminPermission = function(permission) {
 
 // Fonction pour exporter le rapport utilisateur en CSV
 window.exportUserReportToCSV = function() {
+    if (state.currentRole === 'responsible') {
+        alert("Vous n'avez pas la permission d'exporter des rapports détaillés!");
+        return;
+    }
+    
     let csvContent = "data:text/csv;charset=utf-8,";
     let rows = [];
     
