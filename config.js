@@ -86,30 +86,38 @@ function updateLogoDisplay() {
     if (state.hospitalLogo) {
         const headerLogo = document.getElementById('header-logo');
         const headerIcon = document.getElementById('header-icon');
-        headerLogo.src = state.hospitalLogo;
-        headerLogo.style.display = 'block';
-        headerIcon.style.display = 'none';
+        if (headerLogo && headerIcon) {
+            headerLogo.src = state.hospitalLogo;
+            headerLogo.style.display = 'block';
+            headerIcon.style.display = 'none';
+        }
         
         const loginLogo = document.getElementById('login-logo');
         const loginIcon = document.getElementById('login-icon');
-        loginLogo.src = state.hospitalLogo;
-        loginLogo.style.display = 'block';
-        loginIcon.style.display = 'none';
+        if (loginLogo && loginIcon) {
+            loginLogo.src = state.hospitalLogo;
+            loginLogo.style.display = 'block';
+            loginIcon.style.display = 'none';
+        }
     }
 }
 
 function updateMessageBadge() {
+    if (!state.currentUser) return;
+    
     const unreadCount = state.messages.filter(m => 
         m.recipient === state.currentUser.username && 
         !m.read
     ).length;
     
     const badge = document.getElementById('message-badge');
-    if (unreadCount > 0) {
-        badge.textContent = unreadCount > 9 ? '9+' : unreadCount;
-        badge.classList.remove('hidden');
-    } else {
-        badge.classList.add('hidden');
+    if (badge) {
+        if (unreadCount > 0) {
+            badge.textContent = unreadCount > 9 ? '9+' : unreadCount;
+            badge.classList.remove('hidden');
+        } else {
+            badge.classList.add('hidden');
+        }
     }
     
     state.unreadMessages = unreadCount;
@@ -140,7 +148,7 @@ function sendNotificationToCashier(transaction) {
 }
 
 function sendPaymentNotification(transaction) {
-    const roles = ['admin', 'secretary', 'doctor', 'nurse', 'lab', 'pharmacy'];
+    const roles = ['admin', 'responsible', 'secretary', 'doctor', 'nurse', 'lab', 'pharmacy'];
     roles.forEach(role => {
         const users = state.users.filter(u => u.role === role && u.active && u.username !== state.currentUser.username);
         users.forEach(user => {
@@ -177,8 +185,8 @@ function viewPatientCard(patientId) {
         return;
     }
     
-    document.getElementById('card-hospital-name').textContent = document.getElementById('hospital-name').value;
-    document.getElementById('card-hospital-address').textContent = document.getElementById('hospital-address').value;
+    document.getElementById('card-hospital-name').textContent = document.getElementById('hospital-name')?.value || 'Hôpital Saint-Luc';
+    document.getElementById('card-hospital-address').textContent = document.getElementById('hospital-address')?.value || 'Port-au-Prince, Haïti';
     
     if (state.hospitalLogo) {
         document.getElementById('card-logo').src = state.hospitalLogo;
@@ -215,12 +223,14 @@ function viewPatientCard(patientId) {
     }
     
     const container = document.getElementById('patient-card-container');
-    container.classList.remove('hidden');
-    
-    setTimeout(() => {
-        window.print();
-        container.classList.add('hidden');
-    }, 500);
+    if (container) {
+        container.classList.remove('hidden');
+        
+        setTimeout(() => {
+            window.print();
+            container.classList.add('hidden');
+        }, 500);
+    }
 }
 
 function checkPrivilegeExpirationAll() {
@@ -252,6 +262,8 @@ function loadDemoData() {
             phone: '1234-5678',
             responsible: '',
             type: 'normal',
+            allergies: 'Pénicilline',
+            notes: 'Patient suivi pour hypertension',
             vip: false,
             sponsored: false,
             discountPercentage: 0,
@@ -268,6 +280,8 @@ function loadDemoData() {
             phone: '8765-4321',
             responsible: '',
             type: 'urgence',
+            allergies: 'Aucune',
+            notes: 'Patient en urgence',
             vip: true,
             sponsored: false,
             discountPercentage: 0,
@@ -284,6 +298,8 @@ function loadDemoData() {
             phone: '2345-6789',
             responsible: 'Sophie Petit',
             type: 'pediatrie',
+            allergies: 'Aspirine',
+            notes: 'Enfant de 6 ans',
             vip: false,
             sponsored: true,
             discountPercentage: 20,
@@ -300,6 +316,8 @@ function loadDemoData() {
             phone: '3456-7890',
             responsible: '',
             type: 'externe',
+            allergies: 'Aucune',
+            notes: 'Service externe uniquement',
             vip: false,
             sponsored: false,
             discountPercentage: 0,
@@ -436,8 +454,10 @@ function loadDemoData() {
             date: new Date().toISOString().split('T')[0],
             time: '09:30',
             diagnosis: 'Fièvre légère et maux de tête. Pas de signes alarmants.',
+            notes: 'Prescrire paracétamol et repos',
             followupDate: '',
-            followupTime: ''
+            followupTime: '',
+            status: 'completed'
         }
     );
     
@@ -521,3 +541,52 @@ function loadDemoData() {
     state.patientCounter = 5;
     state.transactionCounter = 4;
 }
+
+// Fonction pour sauvegarder l'état localement
+function saveStateToLocalStorage() {
+    try {
+        localStorage.setItem('hospitalSystemState', JSON.stringify(state));
+        console.log('État sauvegardé dans localStorage');
+    } catch (e) {
+        console.error('Erreur lors de la sauvegarde:', e);
+    }
+}
+
+// Fonction pour charger l'état depuis le localStorage
+function loadStateFromLocalStorage() {
+    try {
+        const savedState = localStorage.getItem('hospitalSystemState');
+        if (savedState) {
+            const parsed = JSON.parse(savedState);
+            
+            // Fusionner avec l'état actuel en conservant les références importantes
+            Object.assign(state, parsed);
+            
+            // S'assurer que les structures de données existent
+            if (!state.creditAccounts) state.creditAccounts = {};
+            if (!state.cashierBalances) state.cashierBalances = {};
+            if (!state.reports) state.reports = [];
+            if (!state.roles) state.roles = {
+                admin: { canModifyAllTransactions: true, canDeleteAllTransactions: true, canManagePettyCash: true, canGenerateAllReports: true, canManageAllUsers: true, canEditAllData: true },
+                responsible: { canModifyAllTransactions: true, canDeleteAllTransactions: false, canManagePettyCash: false, canGenerateAllReports: true, canManageAllUsers: false, canEditAllData: false }
+            };
+            
+            console.log('État chargé depuis localStorage');
+            return true;
+        }
+    } catch (e) {
+        console.error('Erreur lors du chargement:', e);
+    }
+    return false;
+}
+
+// Sauvegarder automatiquement toutes les 30 secondes
+setInterval(saveStateToLocalStorage, 30000);
+
+// Charger l'état au démarrage si disponible
+document.addEventListener('DOMContentLoaded', () => {
+    if (!loadStateFromLocalStorage()) {
+        // Si aucun état sauvegardé, charger les données de démo
+        loadDemoData();
+    }
+});

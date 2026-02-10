@@ -6,362 +6,57 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function setupSecretary() {
-    setupPatientTypeChange();
-    setupAppointments();
-    setupMedicalCertificate();
-    
-    // Charger les types de consultation pour le secrétariat
+    // Mettre à jour les listes déroulantes
     updateConsultationTypesSelect();
-    updateExternalServicesOptions();
     updateExternalServicesSelect();
+    updateExternalServicesOptions();
+    loadDoctorsForAppointments();
     
-    document.getElementById('patient-registration-form').addEventListener('submit', (e) => {
-        e.preventDefault();
-        
-        const fullName = document.getElementById('patient-fullname').value;
-        const birthDate = document.getElementById('patient-birthdate').value;
-        const address = document.getElementById('patient-address').value;
-        const phone = document.getElementById('patient-phone').value;
-        const responsible = document.getElementById('patient-responsible').value;
-        const patientType = document.querySelector('input[name="patient-type"]:checked').value;
-        const consultationTypeId = parseInt(document.getElementById('consultation-type-secretary').value);
-        const externalOnly = document.getElementById('external-only').checked;
-        
-        if (patientType !== 'externe' && !externalOnly && !consultationTypeId) {
-            alert("Veuillez sélectionner un type de consultation pour les patients normaux!");
-            return;
-        }
-        
-        const prefix = patientType === 'urgence' ? 'URG' : (patientType === 'pediatrie' ? 'PED' : (patientType === 'externe' ? 'EXT' : 'PAT'));
-        const patientId = prefix + state.patientCounter.toString().padStart(4, '0');
-        state.patientCounter++;
-        
-        const newPatient = {
-            id: patientId,
-            fullName: fullName,
-            birthDate: birthDate,
-            address: address,
-            phone: phone,
-            responsible: responsible,
-            type: patientType,
-            vip: false,
-            sponsored: false,
-            discountPercentage: 0,
-            registrationDate: new Date().toISOString().split('T')[0],
-            registrationTime: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
-            registeredBy: state.currentUser.username
-        };
-        
-        state.patients.push(newPatient);
-        
-        if (externalOnly || patientType === 'externe') {
-            const externalCheckboxes = document.querySelectorAll('.external-service-option:checked');
-            let hasServices = false;
-            
-            externalCheckboxes.forEach(cb => {
-                const serviceId = parseInt(cb.value);
-                const service = state.externalServiceTypes.find(s => s.id === serviceId);
-                
-                if (service) {
-                    hasServices = true;
-                    const externalTransaction = {
-                        id: 'EXT' + state.transactionCounter.toString().padStart(4, '0'),
-                        patientId: patientId,
-                        patientName: fullName,
-                        service: `Service externe: ${service.name}`,
-                        amount: service.price,
-                        status: 'unpaid',
-                        date: new Date().toISOString().split('T')[0],
-                        time: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
-                        createdBy: state.currentUser.username,
-                        type: 'external',
-                        notificationSent: false
-                    };
-                    
-                    state.transactionCounter++;
-                    state.transactions.push(externalTransaction);
-                    sendNotificationToCashier(externalTransaction);
-                }
-            });
-            
-            const customServices = document.querySelectorAll('.external-service-custom');
-            customServices.forEach((serviceInput, index) => {
-                const serviceName = serviceInput.value;
-                const priceInput = document.querySelectorAll('.external-service-price')[index];
-                const servicePrice = parseFloat(priceInput.value);
-                
-                if (serviceName && !isNaN(servicePrice)) {
-                    hasServices = true;
-                    const externalTransaction = {
-                        id: 'EXT' + state.transactionCounter.toString().padStart(4, '0'),
-                        patientId: patientId,
-                        patientName: fullName,
-                        service: `Service externe: ${serviceName}`,
-                        amount: servicePrice,
-                        status: 'unpaid',
-                        date: new Date().toISOString().split('T')[0],
-                        time: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
-                        createdBy: state.currentUser.username,
-                        type: 'external',
-                        notificationSent: false
-                    };
-                    
-                    state.transactionCounter++;
-                    state.transactions.push(externalTransaction);
-                    sendNotificationToCashier(externalTransaction);
-                }
-            });
-            
-            if (!hasServices) {
-                alert("Veuillez sélectionner au moins un service externe!");
-                return;
-            }
-        } else if (consultationTypeId) {
-            let consultationType = state.consultationTypes.find(ct => ct.id === consultationTypeId);
-            
-            if (state.currentModifiedConsultation) {
-                consultationType = { ...consultationType, ...state.currentModifiedConsultation };
-            }
-            
-            const consultationTransaction = {
-                id: 'TR' + state.transactionCounter.toString().padStart(4, '0'),
-                patientId: patientId,
-                patientName: fullName,
-                service: `Consultation: ${consultationType.name}`,
-                amount: consultationType.price,
-                status: 'unpaid',
-                date: new Date().toISOString().split('T')[0],
-                time: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
-                createdBy: state.currentUser.username,
-                type: 'consultation',
-                notificationSent: false,
-                originalTypeId: consultationTypeId,
-                modifiedName: state.currentModifiedConsultation ? state.currentModifiedConsultation.name : null,
-                modifiedPrice: state.currentModifiedConsultation ? state.currentModifiedConsultation.price : null
-            };
-            
-            state.transactionCounter++;
-            state.transactions.push(consultationTransaction);
-            
-            sendNotificationToCashier(consultationTransaction);
-        }
-        
-        alert(`Patient enregistré avec succès! ID: ${patientId}`);
-        
-        e.target.reset();
-        document.getElementById('patient-normal').checked = true;
-        document.getElementById('external-only').checked = false;
-        document.getElementById('consultation-type-container').classList.remove('hidden');
-        document.getElementById('external-services-selection').classList.add('hidden');
-        state.currentModifiedConsultation = null;
-        document.getElementById('consultation-modification-secretary').classList.add('hidden');
-        document.getElementById('modify-consultation-type-btn').classList.add('hidden');
-        
-        updateTodayPatientsList();
-        
-        document.getElementById('generate-patient-id-card').dataset.patientId = patientId;
-        document.getElementById('generate-medical-certificate').dataset.patientId = patientId;
-    });
+    // Enregistrement patient
+    document.getElementById('patient-registration-form').addEventListener('submit', registerPatient);
     
-    document.getElementById('modify-consultation-type-btn').addEventListener('click', () => {
-        const consultationTypeId = parseInt(document.getElementById('consultation-type-secretary').value);
-        if (!consultationTypeId) {
-            alert("Veuillez d'abord sélectionner un type de consultation!");
-            return;
-        }
-        
-        const consultationType = state.consultationTypes.find(ct => ct.id === consultationTypeId);
-        document.getElementById('modified-consultation-name').value = consultationType.name;
-        document.getElementById('modified-consultation-price').value = consultationType.price;
-        document.getElementById('consultation-modification-secretary').classList.remove('hidden');
-    });
+    // Gestion des consultations modifiées
+    document.getElementById('modify-consultation-type-btn').addEventListener('click', showConsultationModification);
+    document.getElementById('save-modified-consultation').addEventListener('click', saveModifiedConsultation);
+    document.getElementById('cancel-consultation-modification').addEventListener('click', hideConsultationModification);
     
-    document.getElementById('save-modified-consultation').addEventListener('click', () => {
-        const consultationTypeId = parseInt(document.getElementById('consultation-type-secretary').value);
-        const modifiedName = document.getElementById('modified-consultation-name').value;
-        const modifiedPrice = parseFloat(document.getElementById('modified-consultation-price').value);
-        
-        if (!modifiedName || isNaN(modifiedPrice)) {
-            alert("Veuillez remplir tous les champs correctement!");
-            return;
-        }
-        
-        state.currentModifiedConsultation = {
-            name: modifiedName,
-            price: modifiedPrice
-        };
-        
-        document.getElementById('consultation-modification-secretary').classList.add('hidden');
-        alert("Modification enregistrée! Cette modification s'appliquera uniquement au patient en cours.");
-    });
+    // Services externes
+    document.getElementById('external-only').addEventListener('change', toggleExternalServicesSelection);
+    document.getElementById('add-external-service-registration').addEventListener('click', addExternalServiceRegistration);
     
-    document.getElementById('cancel-consultation-modification').addEventListener('click', () => {
-        state.currentModifiedConsultation = null;
-        document.getElementById('consultation-modification-secretary').classList.add('hidden');
-    });
+    // Rendez-vous
+    document.getElementById('search-appointment-patient').addEventListener('click', searchAppointmentPatient);
+    document.getElementById('schedule-appointment').addEventListener('click', scheduleAppointment);
     
-    document.getElementById('consultation-type-secretary').addEventListener('change', function() {
-        if (this.value) {
-            document.getElementById('modify-consultation-type-btn').classList.remove('hidden');
-        } else {
-            document.getElementById('modify-consultation-type-btn').classList.add('hidden');
-        }
-    });
+    // Services externes - facturation
+    document.getElementById('search-external-patient').addEventListener('click', searchExternalPatient);
+    document.getElementById('add-external-service').addEventListener('click', addExternalServiceToPatient);
+    document.getElementById('generate-external-invoice').addEventListener('click', generateExternalInvoice);
     
-    document.getElementById('add-external-service-registration').addEventListener('click', function() {
-        const container = document.getElementById('external-services-options');
-        const newService = document.createElement('div');
-        newService.className = 'service-item';
-        newService.innerHTML = `
-            <div>
-                <input type="text" class="form-control external-service-custom" placeholder="Nom du service" style="width:200px; display:inline-block;">
-                <input type="number" class="form-control external-service-price" placeholder="Prix (Gdes)" style="width:150px; display:inline-block;">
-                <button type="button" class="btn btn-danger btn-sm remove-external-service">X</button>
-            </div>
-        `;
-        container.appendChild(newService);
-        
-        newService.querySelector('.remove-external-service').addEventListener('click', function() {
-            this.closest('.service-item').remove();
-        });
-    });
+    // Impression
+    document.getElementById('generate-patient-id-card').addEventListener('click', generatePatientIdCard);
+    document.getElementById('generate-medical-certificate').addEventListener('click', generateMedicalCertificate);
     
-    document.getElementById('search-external-patient').addEventListener('click', () => {
-        const search = document.getElementById('external-service-search').value.toLowerCase();
-        const patient = state.patients.find(p => 
-            p.id.toLowerCase() === search || 
-            p.fullName.toLowerCase().includes(search)
-        );
-        
-        if (!patient) {
-            alert("Patient non trouvé!");
-            return;
-        }
-        
-        document.getElementById('external-patient-name').textContent = patient.fullName + ' (' + patient.id + ')';
-        document.getElementById('external-services-container').classList.remove('hidden');
-        
-        const externalServices = state.transactions.filter(t => 
-            t.patientId === patient.id && 
-            t.type === 'external'
-        );
-        
-        let html = '';
-        if (externalServices.length === 0) {
-            html = '<p>Aucun service externe enregistré.</p>';
-        } else {
-            externalServices.forEach(service => {
-                html += `
-                    <div class="service-item">
-                        <div>${service.service}</div>
-                        <div>${service.amount} Gdes</div>
-                        <div><span class="${service.status === 'paid' ? 'status-paid' : 'status-unpaid'}">${service.status === 'paid' ? 'Payé' : 'Non payé'}</span></div>
-                    </div>
-                `;
-            });
-        }
-        document.getElementById('external-services-list').innerHTML = html;
-    });
-    
-    document.getElementById('add-external-service').addEventListener('click', () => {
-        const patientId = document.getElementById('external-patient-name').textContent.match(/\((.*?)\)/)[1];
-        const serviceSelect = document.getElementById('external-service-select');
-        const selectedOption = serviceSelect.options[serviceSelect.selectedIndex];
-        const serviceId = selectedOption.value;
-        const price = parseFloat(selectedOption.dataset.price) || parseFloat(document.getElementById('new-external-service-price').value);
-        
-        if (!serviceId || isNaN(price)) {
-            alert("Veuillez sélectionner un service et entrer un prix valide!");
-            return;
-        }
-        
-        const serviceType = state.externalServiceTypes.find(s => s.id == serviceId);
-        const serviceName = serviceType ? serviceType.name : 'Service externe';
-        
-        const externalTransaction = {
-            id: 'EXT' + state.transactionCounter.toString().padStart(4, '0'),
-            patientId: patientId,
-            patientName: state.patients.find(p => p.id === patientId).fullName,
-            service: `Service externe: ${serviceName}`,
-            amount: price,
-            status: 'unpaid',
-            date: new Date().toISOString().split('T')[0],
-            time: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
-            createdBy: state.currentUser.username,
-            type: 'external',
-            notificationSent: false
-        };
-        
-        state.transactionCounter++;
-        state.transactions.push(externalTransaction);
-        sendNotificationToCashier(externalTransaction);
-        
-        document.getElementById('search-external-patient').click();
-        
-        serviceSelect.selectedIndex = 0;
-        document.getElementById('new-external-service-price').value = '';
-    });
+    // Mettre à jour la liste des patients d'aujourd'hui
+    updateTodayPatientsList();
 }
 
-function setupPatientTypeChange() {
-    const patientTypeRadios = document.querySelectorAll('input[name="patient-type"]');
-    patientTypeRadios.forEach(radio => {
-        radio.addEventListener('change', function() {
-            const isExternal = this.value === 'externe';
-            const consultationContainer = document.getElementById('consultation-type-container');
-            const externalServicesSelection = document.getElementById('external-services-selection');
-            const consultationSelect = document.getElementById('consultation-type-secretary');
-            
-            if (isExternal) {
-                consultationContainer.classList.add('hidden');
-                externalServicesSelection.classList.remove('hidden');
-                consultationSelect.required = false;
-            } else {
-                consultationContainer.classList.remove('hidden');
-                externalServicesSelection.classList.add('hidden');
-                consultationSelect.required = true;
-            }
-        });
-    });
+function updateConsultationTypesSelect() {
+    const select = document.getElementById('consultation-type-secretary');
+    if (!select) return;
     
-    document.getElementById('external-only').addEventListener('change', function() {
-        const consultationContainer = document.getElementById('consultation-type-container');
-        const externalServicesSelection = document.getElementById('external-services-selection');
-        const consultationSelect = document.getElementById('consultation-type-secretary');
-        
-        if (this.checked) {
-            consultationContainer.classList.add('hidden');
-            externalServicesSelection.classList.remove('hidden');
-            consultationSelect.required = false;
-        } else {
-            consultationContainer.classList.remove('hidden');
-            externalServicesSelection.classList.add('hidden');
-            consultationSelect.required = true;
+    select.innerHTML = '<option value="">Sélectionner...</option>';
+    state.consultationTypes.forEach(type => {
+        if (type.active) {
+            select.innerHTML += `<option value="${type.id}" data-price="${type.price}">${type.name} - ${type.price} Gdes</option>`;
         }
     });
-}
-
-function updateExternalServicesOptions() {
-    const container = document.getElementById('external-services-options');
-    let html = '<div class="service-external-list">';
-    state.externalServiceTypes.forEach(service => {
-        if (service.active) {
-            html += `
-                <div class="service-item">
-                    <div>
-                        <input type="checkbox" class="external-service-option" value="${service.id}" data-price="${service.price}">
-                        ${service.name} - ${service.price} Gdes
-                    </div>
-                </div>
-            `;
-        }
-    });
-    html += '</div>';
-    container.innerHTML = html;
 }
 
 function updateExternalServicesSelect() {
     const select = document.getElementById('external-service-select');
+    if (!select) return;
+    
     select.innerHTML = '<option value="">Choisir un service</option>';
     state.externalServiceTypes.forEach(service => {
         if (service.active) {
@@ -370,195 +65,325 @@ function updateExternalServicesSelect() {
     });
 }
 
-function updateConsultationTypesSelect() {
-    const select = document.getElementById('consultation-type-secretary');
-    select.innerHTML = '<option value="">Sélectionner...</option>';
+function updateExternalServicesOptions() {
+    const container = document.getElementById('external-services-options');
+    if (!container) return;
     
-    state.consultationTypes.forEach(type => {
-        if (type.active) {
-            select.innerHTML += `<option value="${type.id}">${type.name} - ${type.price} Gdes</option>`;
-        }
-    });
-}
-
-function updateTodayPatientsList() {
-    const today = new Date().toISOString().split('T')[0];
-    const todayPatients = state.patients.filter(p => p.registrationDate === today);
-    
-    const container = document.getElementById('today-patients-list');
     let html = '';
-    
-    todayPatients.forEach(patient => {
-        const consultation = state.transactions.find(t => 
-            t.patientId === patient.id && 
-            t.type === 'consultation'
-        );
-        
-        let typeBadge = '';
-        if (patient.type === 'urgence') {
-            typeBadge = '<span class="emergency-patient-tag">Urgence</span>';
-        } else if (patient.type === 'pediatrie') {
-            typeBadge = '<span class="pediatric-tag">Enfant</span>';
-        } else if (patient.type === 'externe') {
-            typeBadge = '<span class="external-patient-tag">Externe</span>';
-        } else {
-            typeBadge = '<span>Normal</span>';
+    state.externalServiceTypes.forEach(service => {
+        if (service.active) {
+            html += `
+                <div class="external-service-option">
+                    <label>
+                        <input type="checkbox" class="external-service-checkbox" data-id="${service.id}" data-name="${service.name}" data-price="${service.price}">
+                        ${service.name} - ${service.price} Gdes
+                    </label>
+                </div>
+            `;
         }
-        
-        if (patient.vip) {
-            typeBadge += ' <span class="vip-tag">VIP</span>';
-        } else if (patient.sponsored) {
-            typeBadge += ` <span class="vip-tag">SPONSORISÉ (${patient.discountPercentage}%)</span>`;
-        }
-        
-        html += `
-            <tr>
-                <td>${patient.id}</td>
-                <td>${patient.fullName}</td>
-                <td>${patient.phone}</td>
-                <td>${typeBadge}</td>
-                <td>${consultation ? consultation.service : 'Service externe uniquement'}</td>
-                <td>
-                    <button class="btn btn-sm btn-info" onclick="viewPatientCard('${patient.id}')">
-                        Carte
-                    </button>
-                </td>
-            </tr>
-        `;
     });
     
     container.innerHTML = html;
 }
 
-function setupAppointments() {
-    // Initialiser les boutons de rendez-vous pour le secrétariat
-    const searchBtn = document.getElementById('search-appointment-patient');
-    if (searchBtn) {
-        searchBtn.addEventListener('click', searchAppointmentPatient);
+function loadDoctorsForAppointments() {
+    const select = document.getElementById('appointment-doctor');
+    if (!select) return;
+    
+    select.innerHTML = '<option value="">Sélectionner un médecin</option>';
+    const doctors = state.users.filter(u => u.role === 'doctor' && u.active);
+    doctors.forEach(doctor => {
+        select.innerHTML += `<option value="${doctor.username}">Dr. ${doctor.name}</option>`;
+    });
+}
+
+function registerPatient(e) {
+    e.preventDefault();
+    
+    // Récupérer les valeurs du formulaire
+    const fullName = document.getElementById('patient-fullname').value.trim();
+    const birthDate = document.getElementById('patient-birthdate').value;
+    const address = document.getElementById('patient-address').value.trim();
+    const phone = document.getElementById('patient-phone').value.trim();
+    const responsible = document.getElementById('patient-responsible').value.trim();
+    const allergies = document.getElementById('patient-allergies').value.trim();
+    const notes = document.getElementById('patient-notes').value.trim();
+    const patientType = document.querySelector('input[name="patient-type"]:checked').value;
+    const externalOnly = document.getElementById('external-only').checked;
+    const consultationTypeId = document.getElementById('consultation-type-secretary').value;
+    
+    // Validation
+    if (!fullName || !birthDate || !phone) {
+        alert("Veuillez remplir tous les champs obligatoires (*)!");
+        return;
     }
     
-    const scheduleBtn = document.getElementById('schedule-appointment');
-    if (scheduleBtn) {
-        scheduleBtn.addEventListener('click', scheduleAppointment);
+    if (!externalOnly && !consultationTypeId) {
+        alert("Veuillez sélectionner un type de consultation!");
+        return;
     }
     
-    // Charger la liste des rendez-vous au démarrage
-    setTimeout(() => {
-        loadTodayAppointments();
-    }, 100);
+    // Générer un ID patient
+    let prefix = 'PAT';
+    switch(patientType) {
+        case 'urgence': prefix = 'URG'; break;
+        case 'pediatrie': prefix = 'PED'; break;
+        case 'externe': prefix = 'EXT'; break;
+    }
+    
+    const patientId = prefix + String(state.patientCounter).padStart(4, '0');
+    state.patientCounter++;
+    
+    // Créer le patient
+    const newPatient = {
+        id: patientId,
+        fullName: fullName,
+        birthDate: birthDate,
+        address: address,
+        phone: phone,
+        responsible: responsible,
+        type: patientType,
+        allergies: allergies,
+        notes: notes,
+        vip: false,
+        sponsored: false,
+        discountPercentage: 0,
+        privilegeGrantedDate: null,
+        registrationDate: new Date().toISOString().split('T')[0],
+        registrationTime: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
+        registeredBy: state.currentUser.username
+    };
+    
+    state.patients.push(newPatient);
+    
+    // Créer la transaction de consultation si nécessaire
+    if (!externalOnly) {
+        const consultationType = state.consultationTypes.find(t => t.id == consultationTypeId);
+        if (consultationType) {
+            let consultationPrice = consultationType.price;
+            let consultationName = consultationType.name;
+            
+            // Vérifier si le type a été modifié
+            if (state.currentModifiedConsultation && state.currentModifiedConsultation.originalId == consultationTypeId) {
+                consultationPrice = state.currentModifiedConsultation.modifiedPrice;
+                consultationName = state.currentModifiedConsultation.modifiedName;
+            }
+            
+            const transaction = {
+                id: 'CONS' + Date.now(),
+                patientId: patientId,
+                patientName: fullName,
+                service: `Consultation: ${consultationName}`,
+                amount: consultationPrice,
+                status: 'unpaid',
+                date: new Date().toISOString().split('T')[0],
+                time: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
+                createdBy: state.currentUser.username,
+                type: 'consultation',
+                consultationTypeId: consultationTypeId,
+                modified: state.currentModifiedConsultation ? true : false,
+                modifiedName: state.currentModifiedConsultation ? state.currentModifiedConsultation.modifiedName : null,
+                modifiedPrice: state.currentModifiedConsultation ? state.currentModifiedConsultation.modifiedPrice : null
+            };
+            
+            state.transactions.push(transaction);
+            
+            // Envoyer notification au caissier
+            sendNotificationToCashier(transaction);
+        }
+    }
+    
+    // Ajouter les services externes sélectionnés
+    if (externalOnly || document.getElementById('external-services-selection').classList.contains('hidden') === false) {
+        const externalCheckboxes = document.querySelectorAll('.external-service-checkbox:checked');
+        externalCheckboxes.forEach(checkbox => {
+            const serviceId = checkbox.dataset.id;
+            const serviceName = checkbox.dataset.name;
+            const servicePrice = parseFloat(checkbox.dataset.price);
+            
+            const externalTransaction = {
+                id: 'EXT' + Date.now(),
+                patientId: patientId,
+                patientName: fullName,
+                service: `Service externe: ${serviceName}`,
+                amount: servicePrice,
+                status: 'unpaid',
+                date: new Date().toISOString().split('T')[0],
+                time: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
+                createdBy: state.currentUser.username,
+                type: 'external',
+                notificationSent: false
+            };
+            
+            state.transactions.push(externalTransaction);
+            
+            // Envoyer notification au caissier
+            sendNotificationToCashier(externalTransaction);
+        });
+    }
+    
+    alert(`Patient enregistré avec succès!\nID Patient: ${patientId}`);
+    
+    // Réinitialiser le formulaire
+    e.target.reset();
+    state.currentModifiedConsultation = null;
+    document.getElementById('external-services-selection').classList.add('hidden');
+    document.getElementById('consultation-modification-secretary').classList.add('hidden');
+    document.getElementById('modify-consultation-type-btn').classList.add('hidden');
+    
+    // Mettre à jour la liste des patients
+    updateTodayPatientsList();
+}
+
+function showConsultationModification() {
+    const consultationTypeId = document.getElementById('consultation-type-secretary').value;
+    if (!consultationTypeId) {
+        alert("Veuillez d'abord sélectionner un type de consultation!");
+        return;
+    }
+    
+    const consultationType = state.consultationTypes.find(t => t.id == consultationTypeId);
+    if (!consultationType) return;
+    
+    document.getElementById('modified-consultation-name').value = consultationType.name;
+    document.getElementById('modified-consultation-price').value = consultationType.price;
+    
+    document.getElementById('consultation-modification-secretary').classList.remove('hidden');
+    
+    // Stocker la consultation originale pour référence
+    state.currentModifiedConsultation = {
+        originalId: consultationTypeId,
+        originalName: consultationType.name,
+        originalPrice: consultationType.price,
+        modifiedName: consultationType.name,
+        modifiedPrice: consultationType.price
+    };
+}
+
+function saveModifiedConsultation() {
+    const modifiedName = document.getElementById('modified-consultation-name').value.trim();
+    const modifiedPrice = parseFloat(document.getElementById('modified-consultation-price').value);
+    
+    if (!modifiedName || isNaN(modifiedPrice) || modifiedPrice < 0) {
+        alert("Veuillez entrer un nom et un prix valides!");
+        return;
+    }
+    
+    if (state.currentModifiedConsultation) {
+        state.currentModifiedConsultation.modifiedName = modifiedName;
+        state.currentModifiedConsultation.modifiedPrice = modifiedPrice;
+    }
+    
+    alert("Modification enregistrée! Cette modification s'appliquera uniquement au patient en cours.");
+    hideConsultationModification();
+}
+
+function hideConsultationModification() {
+    document.getElementById('consultation-modification-secretary').classList.add('hidden');
+}
+
+function toggleExternalServicesSelection() {
+    const externalOnly = document.getElementById('external-only').checked;
+    const externalServicesDiv = document.getElementById('external-services-selection');
+    const consultationContainer = document.getElementById('consultation-type-container');
+    
+    if (externalOnly) {
+        externalServicesDiv.classList.remove('hidden');
+        consultationContainer.classList.add('hidden');
+    } else {
+        externalServicesDiv.classList.add('hidden');
+        consultationContainer.classList.remove('hidden');
+    }
+}
+
+function addExternalServiceRegistration() {
+    const serviceName = prompt("Nom du service externe:");
+    const servicePrice = parseFloat(prompt("Prix du service (Gdes):"));
+    
+    if (!serviceName || isNaN(servicePrice) || servicePrice < 0) {
+        alert("Veuillez entrer des informations valides!");
+        return;
+    }
+    
+    const newService = {
+        id: 'CUST' + Date.now(),
+        name: serviceName,
+        price: servicePrice
+    };
+    
+    // Ajouter aux options
+    const container = document.getElementById('external-services-options');
+    container.innerHTML += `
+        <div class="external-service-option">
+            <label>
+                <input type="checkbox" class="external-service-checkbox" data-id="${newService.id}" data-name="${newService.name}" data-price="${newService.price}" checked>
+                ${newService.name} - ${newService.price} Gdes
+            </label>
+        </div>
+    `;
+    
+    alert("Service externe ajouté!");
 }
 
 function searchAppointmentPatient() {
-    const patientId = document.getElementById('appointment-patient-search').value.trim();
-    const patient = state.patients.find(p => p.id === patientId);
+    const search = document.getElementById('appointment-patient-search').value.trim();
+    const patient = state.patients.find(p => p.id === search);
     
     if (!patient) {
         alert("Patient non trouvé!");
         return;
     }
     
-    // Afficher les détails du patient
-    document.getElementById('appointment-patient-name').textContent = patient.fullName + ' (' + patient.id + ')';
+    document.getElementById('appointment-patient-name').textContent = `${patient.fullName} (${patient.id})`;
     document.getElementById('appointment-patient-details').classList.remove('hidden');
-    
-    // Charger la liste des médecins
-    loadDoctorsForAppointments();
-    
-    // Afficher les rendez-vous existants de ce patient
-    const patientAppointments = state.appointments.filter(a => a.patientId === patientId);
-    const appointmentList = document.getElementById('patient-existing-appointments');
-    
-    if (patientAppointments.length === 0) {
-        appointmentList.innerHTML = '<p>Aucun rendez-vous existant.</p>';
-    } else {
-        let html = '<h5>Rendez-vous existants:</h5>';
-        html += '<ul>';
-        patientAppointments.forEach(app => {
-            const doctorUser = state.users.find(u => u.username === app.doctor);
-            const doctorName = doctorUser ? doctorUser.name : app.doctor;
-            html += `<li>${app.date} à ${app.time} avec Dr. ${doctorName} - ${app.reason}</li>`;
-        });
-        html += '</ul>';
-        appointmentList.innerHTML = html;
-    }
-}
-
-function loadDoctorsForAppointments() {
-    const select = document.getElementById('appointment-doctor');
-    select.innerHTML = '<option value="">Sélectionner un médecin</option>';
-    
-    state.users.forEach(user => {
-        if (user.role === 'doctor' && user.active) {
-            // Utiliser le username comme valeur
-            select.innerHTML += `<option value="${user.username}">${user.name}</option>`;
-        }
-    });
 }
 
 function scheduleAppointment() {
     const patientId = document.getElementById('appointment-patient-search').value.trim();
-    const patient = state.patients.find(p => p.id === patientId);
+    const date = document.getElementById('appointment-date').value;
+    const time = document.getElementById('appointment-time').value;
+    const reason = document.getElementById('appointment-reason').value.trim();
+    const doctor = document.getElementById('appointment-doctor').value;
     
+    if (!patientId || !date || !time || !doctor) {
+        alert("Veuillez remplir tous les champs obligatoires!");
+        return;
+    }
+    
+    const patient = state.patients.find(p => p.id === patientId);
     if (!patient) {
         alert("Patient non trouvé!");
         return;
     }
     
-    const date = document.getElementById('appointment-date').value;
-    const time = document.getElementById('appointment-time').value;
-    const reason = document.getElementById('appointment-reason').value;
-    const doctor = document.getElementById('appointment-doctor').value;
-    const doctorUser = state.users.find(u => u.username === doctor);
-    
-    if (!doctorUser) {
-        alert("Veuillez sélectionner un médecin valide!");
-        return;
-    }
-
-    if (!date || !time) {
-        alert("Veuillez remplir la date et l'heure!");
-        return;
-    }
-
-    // Vérifier si la date est dans le futur
-    const appointmentDate = new Date(date + ' ' + time);
-    const now = new Date();
-    
-    if (appointmentDate <= now) {
-        alert("La date du rendez-vous doit être dans le futur!");
-        return;
-    }
-
-    // Créer le rendez-vous
     const appointment = {
-        id: 'APP' + Date.now().toString().slice(-8),
-        patientId: patient.id,
+        id: 'APP' + Date.now(),
+        patientId: patientId,
         patientName: patient.fullName,
         date: date,
         time: time,
         reason: reason,
-        doctor: doctor, // Stocker le username du médecin
-        doctorName: doctorUser.name, // Stocker aussi le nom affiché
+        doctor: doctor,
         createdBy: state.currentUser.username,
-        createdAt: new Date().toISOString(),
         status: 'scheduled'
     };
-
+    
     state.appointments.push(appointment);
     
-    // Envoyer une notification au médecin
+    // Envoyer notification au médecin
+    const doctorUser = state.users.find(u => u.username === doctor);
     if (doctorUser) {
         const message = {
             id: 'MSG' + Date.now(),
             sender: state.currentUser.username,
             senderRole: state.currentRole,
-            recipient: doctorUser.username,
-            recipientRole: doctorUser.role,
-            subject: 'Nouveau rendez-vous programmé',
-            content: `Nouveau rendez-vous pour le patient ${patient.fullName} (${patient.id}) le ${date} à ${time}. Motif: ${reason}`,
+            recipient: doctor,
+            recipientRole: 'doctor',
+            subject: 'Nouveau rendez-vous',
+            content: `Nouveau rendez-vous programmé pour le ${date} à ${time} avec ${patient.fullName}. Motif: ${reason}`,
             timestamp: new Date().toISOString(),
             read: false,
-            type: 'appointment_notification'
+            type: 'appointment'
         };
         state.messages.push(message);
         updateMessageBadge();
@@ -566,63 +391,44 @@ function scheduleAppointment() {
     
     alert("Rendez-vous programmé avec succès!");
     
-    // Réinitialiser le formulaire
+    // Réinitialiser
     document.getElementById('appointment-patient-search').value = '';
     document.getElementById('appointment-date').value = '';
     document.getElementById('appointment-time').value = '';
     document.getElementById('appointment-reason').value = '';
     document.getElementById('appointment-doctor').selectedIndex = 0;
     document.getElementById('appointment-patient-details').classList.add('hidden');
-    document.getElementById('patient-existing-appointments').innerHTML = '';
     
-    // Recharger la liste des rendez-vous programmés
-    loadTodayAppointments();
+    // Mettre à jour la liste
+    loadAppointmentsList();
 }
 
-function loadTodayAppointments() {
+function loadAppointmentsList() {
     const container = document.getElementById('appointments-list');
     if (!container) return;
     
     const today = new Date().toISOString().split('T')[0];
+    const upcomingAppointments = state.appointments.filter(a => a.date >= today)
+        .sort((a, b) => new Date(a.date + ' ' + a.time) - new Date(b.date + ' ' + b.time));
     
-    // Pour le secrétaire, montrer tous les rendez-vous d'aujourd'hui et futurs
-    const upcoming = state.appointments.filter(a => a.date >= today)
-        .sort((a, b) => {
-            const dateA = new Date(a.date + ' ' + a.time);
-            const dateB = new Date(b.date + ' ' + b.time);
-            return dateA - dateB;
-        });
-    
-    if (upcoming.length === 0) {
-        container.innerHTML = '<p>Aucun rendez-vous à venir.</p>';
+    if (upcomingAppointments.length === 0) {
+        container.innerHTML = '<p>Aucun rendez-vous programmé.</p>';
         return;
     }
     
-    let html = '<table class="table-container"><thead><tr><th>Patient</th><th>Date</th><th>Heure</th><th>Motif</th><th>Médecin</th><th>Statut</th></tr></thead><tbody>';
+    let html = '<table class="table-container"><thead><tr><th>Patient</th><th>Date</th><th>Heure</th><th>Motif</th><th>Médecin</th><th>Actions</th></tr></thead><tbody>';
     
-    upcoming.forEach(app => {
-        const doctorUser = state.users.find(u => u.username === app.doctor);
-        const doctorDisplayName = doctorUser ? doctorUser.name : app.doctor;
-        
-        let statusBadge = '';
-        if (app.status === 'scheduled') {
-            statusBadge = '<span class="patient-status-badge status-upcoming">Programmé</span>';
-        } else if (app.status === 'completed') {
-            statusBadge = '<span class="patient-status-badge status-paid">Terminé</span>';
-        } else if (app.status === 'cancelled') {
-            statusBadge = '<span class="patient-status-badge status-unpaid">Annulé</span>';
-        } else {
-            statusBadge = `<span class="patient-status-badge">${app.status}</span>`;
-        }
-        
+    upcomingAppointments.forEach(appointment => {
         html += `
             <tr>
-                <td>${app.patientName} (${app.patientId})</td>
-                <td>${app.date}</td>
-                <td>${app.time}</td>
-                <td>${app.reason}</td>
-                <td>${doctorDisplayName}</td>
-                <td>${statusBadge}</td>
+                <td>${appointment.patientName} (${appointment.patientId})</td>
+                <td>${appointment.date}</td>
+                <td>${appointment.time}</td>
+                <td>${appointment.reason}</td>
+                <td>${appointment.doctor}</td>
+                <td>
+                    <button class="btn btn-sm btn-warning" onclick="cancelAppointment('${appointment.id}')">Annuler</button>
+                </td>
             </tr>
         `;
     });
@@ -631,54 +437,335 @@ function loadTodayAppointments() {
     container.innerHTML = html;
 }
 
-function setupMedicalCertificate() {
-    document.getElementById('generate-medical-certificate').addEventListener('click', function() {
-        const patientId = this.dataset.patientId;
-        const patient = state.patients.find(p => p.id === patientId);
+function cancelAppointment(appointmentId) {
+    if (confirm("Êtes-vous sûr de vouloir annuler ce rendez-vous?")) {
+        state.appointments = state.appointments.filter(a => a.id !== appointmentId);
+        loadAppointmentsList();
+        alert("Rendez-vous annulé!");
+    }
+}
+
+function searchExternalPatient() {
+    const search = document.getElementById('external-service-search').value.toLowerCase();
+    const patient = state.patients.find(p => 
+        p.id.toLowerCase() === search || 
+        p.fullName.toLowerCase().includes(search)
+    );
+    
+    if (!patient) {
+        alert("Patient non trouvé!");
+        return;
+    }
+    
+    document.getElementById('external-patient-name').textContent = `${patient.fullName} (${patient.id})`;
+    document.getElementById('external-services-container').classList.remove('hidden');
+    
+    // Afficher les services externes existants
+    displayExternalServicesForPatient(patient.id);
+}
+
+function displayExternalServicesForPatient(patientId) {
+    const container = document.getElementById('external-services-list');
+    const externalTransactions = state.transactions.filter(t => 
+        t.patientId === patientId && 
+        t.type === 'external'
+    );
+    
+    if (externalTransactions.length === 0) {
+        container.innerHTML = '<p>Aucun service externe pour ce patient.</p>';
+        return;
+    }
+    
+    let html = '<table class="table-container"><thead><tr><th>Service</th><th>Prix</th><th>Statut</th><th>Actions</th></tr></thead><tbody>';
+    let total = 0;
+    
+    externalTransactions.forEach(transaction => {
+        html += `
+            <tr>
+                <td>${transaction.service}</td>
+                <td>${transaction.amount} Gdes</td>
+                <td><span class="${transaction.status === 'paid' ? 'status-paid' : 'status-unpaid'}">${transaction.status === 'paid' ? 'Payé' : 'Non payé'}</span></td>
+                <td>
+                    <button class="btn btn-sm btn-danger" onclick="removeExternalService('${transaction.id}')">Supprimer</button>
+                </td>
+            </tr>
+        `;
+        total += transaction.amount;
+    });
+    
+    html += `</tbody></table><div class="mt-2"><strong>Total: ${total} Gdes</strong></div>`;
+    container.innerHTML = html;
+}
+
+function removeExternalService(transactionId) {
+    if (confirm("Supprimer ce service externe?")) {
+        state.transactions = state.transactions.filter(t => t.id !== transactionId);
+        const patientId = document.getElementById('external-service-search').value.trim();
+        displayExternalServicesForPatient(patientId);
+    }
+}
+
+function addExternalServiceToPatient() {
+    const patientId = document.getElementById('external-service-search').value.trim();
+    const serviceSelect = document.getElementById('external-service-select');
+    const priceInput = document.getElementById('new-external-service-price');
+    
+    if (!patientId) {
+        alert("Veuillez d'abord rechercher un patient!");
+        return;
+    }
+    
+    const serviceId = serviceSelect.value;
+    let serviceName = '';
+    let servicePrice = 0;
+    
+    if (serviceId) {
+        const service = state.externalServiceTypes.find(s => s.id == serviceId);
+        if (service) {
+            serviceName = service.name;
+            servicePrice = parseFloat(priceInput.value) || service.price;
+        }
+    } else {
+        serviceName = prompt("Nom du service personnalisé:");
+        servicePrice = parseFloat(prompt("Prix du service (Gdes):"));
         
-        if (!patient) {
-            alert("Patient non trouvé!");
+        if (!serviceName || isNaN(servicePrice) || servicePrice < 0) {
+            alert("Veuillez entrer des informations valides!");
             return;
         }
+    }
+    
+    const patient = state.patients.find(p => p.id === patientId);
+    if (!patient) {
+        alert("Patient non trouvé!");
+        return;
+    }
+    
+    const externalTransaction = {
+        id: 'EXT' + Date.now(),
+        patientId: patientId,
+        patientName: patient.fullName,
+        service: `Service externe: ${serviceName}`,
+        amount: servicePrice,
+        status: 'unpaid',
+        date: new Date().toISOString().split('T')[0],
+        time: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
+        createdBy: state.currentUser.username,
+        type: 'external',
+        notificationSent: false
+    };
+    
+    state.transactions.push(externalTransaction);
+    
+    // Envoyer notification au caissier
+    sendNotificationToCashier(externalTransaction);
+    
+    alert("Service externe ajouté!");
+    
+    // Réinitialiser
+    serviceSelect.selectedIndex = 0;
+    priceInput.value = '';
+    
+    // Mettre à jour l'affichage
+    displayExternalServicesForPatient(patientId);
+}
+
+function generateExternalInvoice() {
+    const patientId = document.getElementById('external-service-search').value.trim();
+    if (!patientId) {
+        alert("Veuillez d'abord rechercher un patient!");
+        return;
+    }
+    
+    const patient = state.patients.find(p => p.id === patientId);
+    const externalTransactions = state.transactions.filter(t => 
+        t.patientId === patientId && 
+        t.type === 'external' &&
+        t.status === 'unpaid'
+    );
+    
+    if (externalTransactions.length === 0) {
+        alert("Aucun service externe impayé pour ce patient!");
+        return;
+    }
+    
+    const total = externalTransactions.reduce((sum, t) => sum + t.amount, 0);
+    
+    let servicesHtml = '';
+    externalTransactions.forEach(transaction => {
+        servicesHtml += `
+            <div class="receipt-item">
+                <span>${transaction.service}</span>
+                <span>${transaction.amount} Gdes</span>
+            </div>
+        `;
+    });
+    
+    const invoiceContent = `
+        <div class="print-receipt">
+            <div class="text-center">
+                <h3>${document.getElementById('hospital-name-header').textContent}</h3>
+                <p>${document.getElementById('hospital-address-header').textContent}</p>
+                <p>Facture Services Externes</p>
+            </div>
+            <hr>
+            <div>
+                <p><strong>Patient:</strong> ${patient.fullName}</p>
+                <p><strong>ID Patient:</strong> ${patient.id}</p>
+                <p><strong>Date:</strong> ${new Date().toLocaleDateString('fr-FR')}</p>
+                <p><strong>Heure:</strong> ${new Date().toLocaleTimeString('fr-FR', {hour: '2-digit', minute:'2-digit'})}</p>
+            </div>
+            <hr>
+            <h4>Services externes à payer</h4>
+            ${servicesHtml}
+            <hr>
+            <div class="receipt-item">
+                <span><strong>TOTAL:</strong></span>
+                <span><strong>${total}</strong> Gdes</span>
+            </div>
+            <hr>
+            <div class="text-center">
+                <p>À payer à la caisse</p>
+                <p><small>Facture #${'EXT' + Date.now().toString().slice(-8)}</small></p>
+            </div>
+        </div>
+    `;
+    
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(`
+        <html>
+        <head>
+            <title>Facture Services Externes</title>
+            <style>
+                body { font-family: Arial, sans-serif; padding: 20px; }
+                .print-receipt { width: 80mm; margin: 0 auto; }
+                .text-center { text-align: center; }
+                .receipt-item { display: flex; justify-content: space-between; margin: 5px 0; }
+                hr { border: none; border-top: 1px dashed #000; margin: 10px 0; }
+            </style>
+        </head>
+        <body>
+            ${invoiceContent}
+        </body>
+        </html>
+    `);
+    printWindow.document.close();
+    printWindow.print();
+}
+
+function updateTodayPatientsList() {
+    const container = document.getElementById('today-patients-list');
+    if (!container) return;
+    
+    const today = new Date().toISOString().split('T')[0];
+    const todayPatients = state.patients.filter(p => p.registrationDate === today);
+    
+    if (todayPatients.length === 0) {
+        container.innerHTML = '<tr><td colspan="6" class="text-center">Aucun patient enregistré aujourd\'hui</td></tr>';
+        return;
+    }
+    
+    let html = '';
+    todayPatients.forEach(patient => {
+        const consultationTransaction = state.transactions.find(t => 
+            t.patientId === patient.id && 
+            t.type === 'consultation'
+        );
         
-        const consultation = state.consultations.find(c => c.patientId === patientId);
+        const consultationType = consultationTransaction ? 
+            consultationTransaction.service.replace('Consultation: ', '') : 
+            'Service externe';
         
-        document.getElementById('certificate-hospital-name').textContent = document.getElementById('hospital-name').value;
-        document.getElementById('certificate-hospital-name-text').textContent = document.getElementById('hospital-name').value;
-        document.getElementById('certificate-hospital-address').textContent = document.getElementById('hospital-address').value;
-        document.getElementById('certificate-hospital-phone').textContent = document.getElementById('hospital-phone').value;
-        
-        if (state.hospitalLogo) {
-            document.getElementById('certificate-logo').src = state.hospitalLogo;
-            document.getElementById('certificate-logo').style.display = 'block';
-        }
-        
-        document.getElementById('certificate-patient-name').textContent = patient.fullName;
-        document.getElementById('certificate-patient-dob').textContent = patient.birthDate;
-        document.getElementById('certificate-patient-address').textContent = patient.address;
-        
-        if (consultation) {
-            document.getElementById('certificate-consultation-date').textContent = consultation.date;
-            document.getElementById('certificate-diagnosis').textContent = consultation.diagnosis;
-            document.getElementById('certificate-doctor').textContent = consultation.doctor;
-        } else {
-            document.getElementById('certificate-consultation-date').textContent = new Date().toISOString().split('T')[0];
-            document.getElementById('certificate-diagnosis').textContent = "Aucun diagnostic enregistré.";
-            document.getElementById('certificate-doctor').textContent = "Médecin";
-        }
-        
-        const now = new Date();
-        const options = { day: 'numeric', month: 'long', year: 'numeric' };
-        document.getElementById('certificate-date').textContent = now.toLocaleDateString('fr-FR', options);
-        
-        document.getElementById('certificate-number').textContent = 'CM-' + Date.now().toString().slice(-6);
-        
-        const container = document.getElementById('medical-certificate-container');
+        html += `
+            <tr>
+                <td>${patient.id}</td>
+                <td>${patient.fullName}</td>
+                <td>${patient.phone}</td>
+                <td>${patient.type.charAt(0).toUpperCase() + patient.type.slice(1)}</td>
+                <td>${consultationType}</td>
+                <td>
+                    <button class="btn btn-sm btn-info" onclick="viewPatientCard('${patient.id}')">Carte</button>
+                    <button class="btn btn-sm btn-warning" onclick="viewPatientDetails('${patient.id}')">Détails</button>
+                </td>
+            </tr>
+        `;
+    });
+    
+    container.innerHTML = html;
+}
+
+function generatePatientIdCard() {
+    const fullName = document.getElementById('patient-fullname').value;
+    const birthDate = document.getElementById('patient-birthdate').value;
+    const phone = document.getElementById('patient-phone').value;
+    
+    if (!fullName || !birthDate || !phone) {
+        alert("Veuillez d'abord remplir les informations du patient!");
+        return;
+    }
+    
+    // Générer un ID temporaire pour l'affichage
+    const tempId = 'TEMP' + Date.now().toString().slice(-6);
+    
+    viewPatientCard(tempId);
+}
+
+function generateMedicalCertificate() {
+    const patientId = prompt("ID du patient pour le certificat médical:");
+    if (!patientId) return;
+    
+    const patient = state.patients.find(p => p.id === patientId);
+    if (!patient) {
+        alert("Patient non trouvé!");
+        return;
+    }
+    
+    const consultation = state.consultations.find(c => c.patientId === patientId);
+    if (!consultation) {
+        alert("Aucune consultation trouvée pour ce patient!");
+        return;
+    }
+    
+    // Remplir le certificat
+    document.getElementById('certificate-number').textContent = 'CM-' + Date.now().toString().slice(-6);
+    document.getElementById('certificate-patient-name').textContent = patient.fullName;
+    document.getElementById('certificate-patient-dob').textContent = patient.birthDate;
+    document.getElementById('certificate-patient-address').textContent = patient.address;
+    document.getElementById('certificate-consultation-date').textContent = consultation.date;
+    document.getElementById('certificate-diagnosis').textContent = consultation.diagnosis;
+    
+    const today = new Date();
+    const options = { day: 'numeric', month: 'long', year: 'numeric' };
+    document.getElementById('certificate-date').textContent = today.toLocaleDateString('fr-FR', options);
+    
+    const doctor = state.users.find(u => u.username === consultation.doctor);
+    document.getElementById('certificate-doctor').textContent = doctor ? doctor.name : 'Médecin';
+    
+    // Afficher le certificat
+    const container = document.getElementById('medical-certificate-container');
+    if (container) {
         container.classList.remove('hidden');
         
         setTimeout(() => {
             window.print();
             container.classList.add('hidden');
         }, 500);
-    });
+    }
+}
+
+function viewPatientDetails(patientId) {
+    const patient = state.patients.find(p => p.id === patientId);
+    if (!patient) return;
+    
+    let details = `Nom: ${patient.fullName}\n`;
+    details += `ID: ${patient.id}\n`;
+    details += `Date naissance: ${patient.birthDate}\n`;
+    details += `Téléphone: ${patient.phone}\n`;
+    details += `Adresse: ${patient.address}\n`;
+    details += `Type: ${patient.type}\n`;
+    if (patient.responsible) details += `Responsable: ${patient.responsible}\n`;
+    if (patient.allergies) details += `Allergies: ${patient.allergies}\n`;
+    if (patient.notes) details += `Notes: ${patient.notes}\n`;
+    
+    alert(details);
 }
