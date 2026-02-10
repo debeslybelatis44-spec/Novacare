@@ -477,7 +477,7 @@
                             </div>
                             <div class="receipt-item">
                                 <span>Moyen de paiement:</span>
-                                <span id="invoice-payment-method">Espèces</span>
+                                <span id="invoice-payment-method">Espèces</span></span>
                             </div>
                             <hr>
                             <div class="text-center">
@@ -1229,16 +1229,16 @@
     <script src="main.js"></script>
     
     <script>
-        // Fonctions manquantes pour medical.js
-        function sendNotificationToCashier(transaction) {
-            if (!window.state || !window.state.messages) return;
+        // Fonctions globales pour assurer la compatibilité entre les fichiers
+        window.sendNotificationToCashier = function(transaction) {
+            if (!state || !state.messages) return;
             
-            const cashiers = window.state.users.filter(u => u.role === 'cashier' && u.active);
+            const cashiers = state.users.filter(u => u.role === 'cashier' && u.active);
             cashiers.forEach(cashier => {
                 const message = {
                     id: 'MSG' + Date.now(),
-                    sender: window.state.currentUser ? window.state.currentUser.username : 'system',
-                    senderRole: window.state.currentRole || 'system',
+                    sender: state.currentUser ? state.currentUser.username : 'system',
+                    senderRole: state.currentRole || 'system',
                     recipient: cashier.username,
                     recipientRole: cashier.role,
                     subject: 'Nouvelle transaction à traiter',
@@ -1247,32 +1247,35 @@
                     read: false,
                     type: 'transaction_notification'
                 };
-                window.state.messages.push(message);
+                state.messages.push(message);
             });
             
-            updateMessageBadge();
-        }
+            if (typeof updateMessageBadge === 'function') {
+                updateMessageBadge();
+            }
+        };
         
-        function updateMessageBadge() {
-            const badge = document.getElementById('message-badge');
-            if (!badge || !window.state || !window.state.currentUser) return;
+        window.updateMessageBadge = function() {
+            if (!state || !state.currentUser) return;
             
-            const unreadCount = window.state.messages.filter(msg => 
-                msg.recipient === window.state.currentUser.username && 
+            const badge = document.getElementById('message-badge');
+            if (!badge) return;
+            
+            const unreadCount = state.messages.filter(msg => 
+                msg.recipient === state.currentUser.username && 
                 !msg.read
             ).length;
             
             if (unreadCount > 0) {
-                badge.textContent = unreadCount;
+                badge.textContent = unreadCount > 9 ? '9+' : unreadCount;
                 badge.classList.remove('hidden');
             } else {
                 badge.classList.add('hidden');
             }
-        }
+        };
         
-        // Fonctions globales pour prescription de médicaments
         window.addMedicationToPrescription = function(medId) {
-            const med = window.state.medicationStock.find(m => m.id === medId);
+            const med = state.medicationStock.find(m => m.id === medId);
             if (!med) return;
             
             const tableBody = document.getElementById('prescription-medications-list');
@@ -1295,12 +1298,16 @@
             const searchInput = document.getElementById('medication-search');
             if (searchInput) searchInput.value = '';
             
-            window.checkStockWarnings();
+            if (typeof window.checkStockWarnings === 'function') {
+                window.checkStockWarnings();
+            }
         };
         
         window.removeMedicationFromPrescription = function(button) {
             button.closest('tr').remove();
-            window.checkStockWarnings();
+            if (typeof window.checkStockWarnings === 'function') {
+                window.checkStockWarnings();
+            }
         };
         
         window.checkStockWarnings = function() {
@@ -1318,7 +1325,7 @@
                 if (!medId || !quantityInput) return;
                 
                 const quantity = parseInt(quantityInput.value);
-                const med = window.state.medicationStock.find(m => m.id === medId);
+                const med = state.medicationStock.find(m => m.id === medId);
                 
                 if (med) {
                     if (quantity > med.quantity) {
@@ -1361,6 +1368,21 @@
                 hospitalLogo: null
             };
         }
+        
+        // Fonctions globales pour les paramètres
+        window.updateSettingsDisplay = function() {
+            // Cette fonction sera remplie par admin.js
+            if (typeof updateSettingsDisplay === 'function') {
+                updateSettingsDisplay();
+            }
+        };
+        
+        window.updateMedicationsSettingsList = function() {
+            // Cette fonction sera remplie par admin.js
+            if (typeof updateMedicationsSettingsList === 'function') {
+                updateMedicationsSettingsList();
+            }
+        };
     </script>
 </body>
 </html>
