@@ -22,13 +22,24 @@ const state = {
     creditAccounts: {},
     
     // Propriétés pour la gestion des caisses
-    mainCash: 1000000, // Grande caisse : 1,000,000 Gdes
-    pettyCash: 50000,  // Petite caisse : 50,000 Gdes
+    mainCash: 1000000,
+    pettyCash: 50000,
     cashierBalances: {},
-    pettyCashTransactions: [], // Historique des extractions de petite caisse
+    pettyCashTransactions: [],
     
     // Propriétés pour les rapports
     reports: [],
+    
+    // Indicateur d'initialisation des modules
+    modulesInitialized: {
+        admin: false,
+        responsible: false,
+        cashier: false,
+        secretary: false,
+        pharmacy: false,
+        settings: false,
+        messaging: false
+    },
     
     // Rôles et permissions
     roles: {
@@ -69,19 +80,19 @@ const state = {
             canManageLab: true,
             canManagePharmacy: true,
             canManageMessaging: true,
-            canManageAdministration: true,  // Lecture seule
+            canManageAdministration: true,
             canManageSettings: false,
             canManageUsers: false,
-            canManageTransactions: true,    // Lecture seule
+            canManageTransactions: true,
             canModifyAllTransactions: false,
             canDeleteAllTransactions: false,
-            canManageCash: true,           // Uniquement petite caisse
-            canManagePettyCash: true,      // Accès complet petite caisse
+            canManageCash: true,
+            canManagePettyCash: true,
             canManageCredits: false,
             canModifyPrivileges: false,
-            canViewDetailedReports: false, // Rapports simplifiés
+            canViewDetailedReports: false,
             canManagePettyCashExtractions: true,
-            canApproveExtractions: false,  // Ne peut pas approuver (auto-approuvé)
+            canApproveExtractions: false,
             canModifyPettyCashTransactions: false
         },
         secretary: {
@@ -219,7 +230,8 @@ function saveStateToLocalStorage() {
             pettyCash: state.pettyCash,
             cashierBalances: state.cashierBalances,
             pettyCashTransactions: state.pettyCashTransactions,
-            reports: state.reports
+            reports: state.reports,
+            modulesInitialized: state.modulesInitialized
         };
         localStorage.setItem('hospitalSystemState', JSON.stringify(stateToSave));
     } catch (error) {
@@ -233,7 +245,6 @@ function loadStateFromLocalStorage() {
         if (savedState) {
             const parsedState = JSON.parse(savedState);
             
-            // Mettre à jour l'état avec les données sauvegardées
             Object.keys(parsedState).forEach(key => {
                 if (state.hasOwnProperty(key)) {
                     state[key] = parsedState[key];
@@ -247,6 +258,17 @@ function loadStateFromLocalStorage() {
             if (!state.cashierBalances) state.cashierBalances = {};
             if (!state.pettyCashTransactions) state.pettyCashTransactions = [];
             if (!state.reports) state.reports = [];
+            if (!state.modulesInitialized) {
+                state.modulesInitialized = {
+                    admin: false,
+                    responsible: false,
+                    cashier: false,
+                    secretary: false,
+                    pharmacy: false,
+                    settings: false,
+                    messaging: false
+                };
+            }
             
             return true;
         }
@@ -257,14 +279,11 @@ function loadStateFromLocalStorage() {
 }
 
 function loadDemoData() {
-    // Charger depuis le localStorage d'abord
     const loaded = loadStateFromLocalStorage();
     
     if (!loaded) {
-        // Données de démo si pas de sauvegarde
         state.users = [...state.demoUsers];
         
-        // Types de consultation par défaut
         state.consultationTypes = [
             { id: 1, name: "Consultation générale", price: 500, description: "Consultation médicale générale", active: true },
             { id: 2, name: "Consultation spécialisée", price: 1000, description: "Consultation avec un spécialiste", active: true },
@@ -272,7 +291,6 @@ function loadDemoData() {
             { id: 4, name: "Consultation pédiatrique", price: 400, description: "Consultation pour enfants", active: true }
         ];
         
-        // Types de signes vitaux par défaut
         state.vitalTypes = [
             { id: 1, name: "Température", unit: "°C", min: 35, max: 42, active: true },
             { id: 2, name: "Pression artérielle", unit: "mmHg", min: 60, max: 200, active: true },
@@ -281,7 +299,6 @@ function loadDemoData() {
             { id: 5, name: "Glycémie", unit: "mg/dL", min: 50, max: 400, active: true }
         ];
         
-        // Types d'analyses par défaut
         state.labAnalysisTypes = [
             { id: 1, name: "Numération sanguine", price: 800, resultType: "text", active: true },
             { id: 2, name: "Glycémie", price: 300, resultType: "text", active: true },
@@ -290,14 +307,12 @@ function loadDemoData() {
             { id: 5, name: "Échographie", price: 2000, resultType: "image", active: true }
         ];
         
-        // Services externes par défaut
         state.externalServiceTypes = [
             { id: 1, name: "Transport ambulance", price: 2000, active: true },
             { id: 2, name: "Matériel orthopédique", price: 5000, active: true },
             { id: 3, name: "Médicaments externes", price: 3000, active: true }
         ];
         
-        // Stock de médicaments par défaut
         state.medicationStock = [
             { id: "MED001", name: "Paracétamol", genericName: "Paracetamol", form: "comprimé", quantity: 100, unit: "comprimés", alertThreshold: 20, price: 50, reserved: 0 },
             { id: "MED002", name: "Amoxicilline", genericName: "Amoxicillin", form: "capsule", quantity: 50, unit: "capsules", alertThreshold: 10, price: 150, reserved: 0 },
@@ -305,7 +320,6 @@ function loadDemoData() {
             { id: "MED004", name: "Vitamine C", genericName: "Ascorbic Acid", form: "comprimé", quantity: 200, unit: "comprimés", alertThreshold: 50, price: 30, reserved: 0 }
         ];
         
-        // Exemple de transactions de petite caisse
         state.pettyCashTransactions = [
             {
                 id: "PETTY001",
@@ -333,7 +347,6 @@ function loadDemoData() {
             }
         ];
         
-        // Initialiser les soldes des caissiers
         state.cashierBalances = {
             "cashier": {
                 balance: 50000,
@@ -366,7 +379,19 @@ function updateLogoDisplay() {
     }
 }
 
-// Initialiser les données au chargement
+// Réinitialiser les indicateurs d'initialisation lors de la déconnexion
+function resetModulesInitialized() {
+    state.modulesInitialized = {
+        admin: false,
+        responsible: false,
+        cashier: false,
+        secretary: false,
+        pharmacy: false,
+        settings: false,
+        messaging: false
+    };
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     loadDemoData();
     updateLogoDisplay();

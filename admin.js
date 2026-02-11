@@ -1,5 +1,19 @@
-// Module Administration, Paramètres et Messagerie
-document.addEventListener('DOMContentLoaded', () => {
+// Module Administration, Paramètres et Messagerie - Version complète
+// Intègre les fonctionnalités spécifiques à l'administrateur (petite caisse dédiée)
+
+// État global d'initialisation des modules
+window.state = window.state || {};
+window.state.modulesInitialized = window.state.modulesInitialized || {};
+
+// Fonction d'initialisation unique pour l'admin (appelée lors de l'activation de l'onglet)
+window.initializeAdminFeatures = function() {
+    if (window.state.currentRole !== 'admin') return;
+    if (window.state.modulesInitialized.admin) {
+        console.log("Admin déjà initialisé");
+        return;
+    }
+    console.log("Initialisation des fonctionnalités administrateur...");
+
     if (document.getElementById('admin-patient-search')) {
         setupAdmin();
     }
@@ -9,7 +23,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (document.getElementById('message-recipient')) {
         setupMessaging();
     }
-});
+
+    window.state.modulesInitialized.admin = true;
+};
 
 // ==================== ADMINISTRATION ====================
 function setupAdmin() {
@@ -33,7 +49,7 @@ function setupAdmin() {
         }
     });
     
-    // NOUVELLES FONCTIONNALITÉS ADMINISTRATION
+    // Nouvelles fonctionnalités administration (crédits, rapports, petite caisse)
     setupAdminExtended();
 }
 
@@ -361,8 +377,13 @@ function setupAdminExtended() {
     document.getElementById('view-cashier-balances')?.addEventListener('click', viewCashierBalances);
     document.getElementById('adjust-cashier-balance')?.addEventListener('click', adjustCashierBalance);
     
-    // Gestion de la petite caisse (pour admin et responsable)
+    // Gestion de la petite caisse standard (pour tous les rôles)
     setupPettyCashManagement();
+    
+    // Gestion de la petite caisse administrateur (onglet dédié)
+    if (state.currentRole === 'admin') {
+        setupAdminPettyCashManagement();
+    }
     
     // Initialiser l'affichage
     updateAdminExtendedDisplay();
@@ -1388,8 +1409,8 @@ function usePatientCreditPrompt(patientId = null) {
     searchAdminPatient();
 }
 
-// ==================== GESTION PETITE CAISSE ====================
-
+// ==================== GESTION PETITE CAISSE STANDARD ====================
+// Onglet accessible à tous les rôles (responsable, admin, etc.)
 function setupPettyCashManagement() {
     // Ajouter l'onglet Petite Caisse à l'administration
     addPettyCashTab();
@@ -1604,10 +1625,10 @@ function updatePendingExtractionsList() {
                 </div>
                 ${state.currentRole === 'admin' ? `
                 <div class="extraction-actions mt-2">
-                    <button class="btn btn-sm btn-success" onclick="approveExtraction('${extraction.id}')">
+                    <button id="approve-extraction-btn" class="btn btn-sm btn-success" data-id="${extraction.id}">
                         <i class="fas fa-check"></i> Approuver
                     </button>
-                    <button class="btn btn-sm btn-danger" onclick="rejectExtraction('${extraction.id}')">
+                    <button id="reject-extraction-btn" class="btn btn-sm btn-danger" data-id="${extraction.id}">
                         <i class="fas fa-times"></i> Rejeter
                     </button>
                     <button class="btn btn-sm btn-info" onclick="viewExtractionDetails('${extraction.id}')">
@@ -1679,7 +1700,7 @@ function requestPettyCashExtraction() {
                 description: description,
                 justification: justification,
                 requestedBy: state.currentUser.username,
-                approvedBy: state.currentUser.username, // Auto-approuvé pour le responsable
+                approvedBy: state.currentUser.username,
                 status: 'approved',
                 notes: 'Auto-approuvé par le responsable'
             };
@@ -1802,7 +1823,7 @@ function viewExtractionHistory() {
     document.body.appendChild(modal);
 }
 
-// Fonctions pour l'administrateur
+// Fonctions pour l'administrateur (petite caisse standard)
 function approveExtraction(extractionId) {
     if (state.currentRole !== 'admin') {
         alert("Seul l'administrateur peut approuver les extractions!");
@@ -1896,7 +1917,7 @@ function cancelExtractionRequest(extractionId) {
     }
 }
 
-// Fonctions globales pour la petite caisse
+// Fonctions globales pour la petite caisse standard
 window.showAllPettyCashTransactions = function() {
     if (state.currentRole !== 'admin') {
         alert("Seul l'administrateur peut voir toutes les transactions!");
@@ -2133,6 +2154,503 @@ window.printExtractionDetails = function(extractionId) {
     `);
     printWindow.document.close();
     printWindow.print();
+};
+
+// ==================== GESTION PETITE CAISSE ADMINISTRATEUR (ONGLET DÉDIÉ) ====================
+// Onglet supplémentaire réservé à l'administrateur pour une gestion avancée
+function setupAdminPettyCashManagement() {
+    if (state.currentRole !== 'admin') return;
+    
+    addAdminPettyCashTab();
+    
+    // Gestionnaires d'événements spécifiques à l'onglet admin
+    document.addEventListener('click', function(e) {
+        if (e.target && e.target.id === 'admin-add-petty-cash-btn') {
+            window.addAdminPettyCash();
+        }
+        if (e.target && e.target.id === 'admin-adjust-petty-cash-btn') {
+            window.adjustAdminPettyCash();
+        }
+        if (e.target && e.target.id === 'admin-approve-extraction-btn') {
+            const extractionId = e.target.dataset.id;
+            window.approveAdminExtraction(extractionId);
+        }
+        if (e.target && e.target.id === 'admin-reject-extraction-btn') {
+            const extractionId = e.target.dataset.id;
+            window.rejectAdminExtraction(extractionId);
+        }
+        if (e.target && e.target.id === 'admin-view-extraction-history-btn') {
+            window.viewAdminExtractionHistory();
+        }
+    });
+}
+
+function addAdminPettyCashTab() {
+    const adminSection = document.getElementById('administration');
+    if (!adminSection) return;
+    
+    if (document.getElementById('admin-petty-cash')) return;
+    
+    const navTabs = document.querySelector('.nav-tabs');
+    const pettyCashTab = document.createElement('div');
+    pettyCashTab.className = 'nav-tab';
+    pettyCashTab.dataset.target = 'adminPettyCash';
+    pettyCashTab.innerHTML = '<i class="fas fa-wallet"></i> Petite Caisse (Admin)';
+    navTabs.appendChild(pettyCashTab);
+    
+    const pettyCashContent = document.createElement('section');
+    pettyCashContent.id = 'adminPettyCash';
+    pettyCashContent.className = 'content';
+    pettyCashContent.innerHTML = generateAdminPettyCashContent();
+    adminSection.parentNode.insertBefore(pettyCashContent, adminSection.nextSibling);
+    
+    pettyCashTab.addEventListener('click', () => {
+        document.querySelectorAll('.nav-tab').forEach(tab => tab.classList.remove('active'));
+        document.querySelectorAll('.content').forEach(content => content.classList.remove('active'));
+        
+        pettyCashTab.classList.add('active');
+        pettyCashContent.classList.add('active');
+        
+        window.loadAdminPettyCashData();
+    });
+}
+
+function generateAdminPettyCashContent() {
+    return `
+        <h2 class="section-title"><i class="fas fa-wallet"></i> Gestion Administrative de la Petite Caisse</h2>
+        
+        <div class="petty-cash-balance-card">
+            <h3>Solde Actuel de la Petite Caisse</h3>
+            <h2 id="admin-petty-cash-balance">${state.pettyCash.toLocaleString()} Gdes</h2>
+            <p>Géré par l'administrateur</p>
+        </div>
+        
+        <div class="row">
+            <div class="col-md-6">
+                <div class="card">
+                    <h3><i class="fas fa-plus-circle"></i> Ajouter des fonds</h3>
+                    <div class="form-group">
+                        <label class="form-label">Montant à ajouter (Gdes)</label>
+                        <input type="number" id="admin-add-petty-cash-amount" class="form-control" placeholder="Montant">
+                    </div>
+                    <button id="admin-add-petty-cash-btn" class="btn btn-success">
+                        <i class="fas fa-plus"></i> Ajouter à la petite caisse
+                    </button>
+                </div>
+            </div>
+            
+            <div class="col-md-6">
+                <div class="card">
+                    <h3><i class="fas fa-adjust"></i> Ajuster le solde</h3>
+                    <div class="form-group">
+                        <label class="form-label">Ajustement (positif/négatif)</label>
+                        <input type="number" id="admin-adjust-petty-cash-amount" class="form-control" placeholder="Montant d'ajustement">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Raison</label>
+                        <input type="text" id="admin-adjust-petty-cash-reason" class="form-control" placeholder="Raison de l'ajustement">
+                    </div>
+                    <button id="admin-adjust-petty-cash-btn" class="btn btn-warning">
+                        <i class="fas fa-adjust"></i> Ajuster le solde
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card mt-3">
+            <h3><i class="fas fa-clock"></i> Demandes en Attente d'Approbation</h3>
+            <div id="admin-pending-extractions-list"></div>
+        </div>
+        
+        <div class="card mt-3">
+            <h3><i class="fas fa-history"></i> Toutes les Transactions</h3>
+            <div id="admin-all-extractions-list"></div>
+        </div>
+        
+        <div class="card mt-3">
+            <h3><i class="fas fa-chart-line"></i> Statistiques Administratives</h3>
+            <div class="report-summary-simple">
+                <div class="d-flex justify-between">
+                    <div>
+                        <p class="summary-label">Total extrait ce mois</p>
+                        <p class="summary-value" id="admin-monthly-extraction-total">0 Gdes</p>
+                    </div>
+                    <div>
+                        <p class="summary-label">Demandes en attente</p>
+                        <p class="summary-value" id="admin-pending-count">0</p>
+                    </div>
+                    <div>
+                        <p class="summary-label">Solde grande caisse</p>
+                        <p class="summary-value" id="admin-main-cash-balance">${state.mainCash.toLocaleString()} Gdes</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+// Fonctions admin pour la petite caisse (exposées globalement)
+window.loadAdminPettyCashData = function() {
+    document.getElementById('admin-petty-cash-balance').textContent = state.pettyCash.toLocaleString() + ' Gdes';
+    document.getElementById('admin-main-cash-balance').textContent = state.mainCash.toLocaleString() + ' Gdes';
+    
+    updateAdminPendingExtractions();
+    updateAdminAllExtractions();
+    updateAdminPettyCashStatistics();
+};
+
+function updateAdminPendingExtractions() {
+    const container = document.getElementById('admin-pending-extractions-list');
+    if (!container) return;
+    
+    const pendingExtractions = state.pettyCashTransactions.filter(t => 
+        t.status === 'pending' || t.status === 'requested'
+    );
+    
+    if (pendingExtractions.length === 0) {
+        container.innerHTML = '<p class="text-muted">Aucune demande en attente.</p>';
+        return;
+    }
+    
+    let html = '<div class="table-container"><table><thead><tr><th>Date</th><th>Demandeur</th><th>Montant</th><th>Raison</th><th>Actions</th></tr></thead><tbody>';
+    
+    pendingExtractions.forEach(extraction => {
+        html += `
+            <tr>
+                <td>${extraction.date} ${extraction.time}</td>
+                <td>${extraction.requestedBy}</td>
+                <td>${extraction.amount} Gdes</td>
+                <td>${extraction.reason}</td>
+                <td>
+                    <button id="admin-approve-extraction-btn" class="btn btn-sm btn-success" data-id="${extraction.id}">
+                        Approuver
+                    </button>
+                    <button id="admin-reject-extraction-btn" class="btn btn-sm btn-danger" data-id="${extraction.id}">
+                        Rejeter
+                    </button>
+                    <button class="btn btn-sm btn-info" onclick="window.viewAdminExtractionDetails('${extraction.id}')">
+                        Détails
+                    </button>
+                </td>
+            </tr>
+        `;
+    });
+    
+    html += '</tbody></table></div>';
+    container.innerHTML = html;
+}
+
+function updateAdminAllExtractions() {
+    const container = document.getElementById('admin-all-extractions-list');
+    if (!container) return;
+    
+    const allExtractions = [...state.pettyCashTransactions]
+        .sort((a, b) => new Date(b.date + ' ' + b.time) - new Date(a.date + ' ' + a.time))
+        .slice(0, 20);
+    
+    if (allExtractions.length === 0) {
+        container.innerHTML = '<p class="text-muted">Aucune transaction.</p>';
+        return;
+    }
+    
+    let html = '<div class="table-container"><table><thead><tr><th>Date</th><th>Demandeur</th><th>Montant</th><th>Raison</th><th>Statut</th><th>Approuvé par</th></tr></thead><tbody>';
+    
+    allExtractions.forEach(extraction => {
+        html += `
+            <tr>
+                <td>${extraction.date} ${extraction.time}</td>
+                <td>${extraction.requestedBy}</td>
+                <td>${extraction.amount} Gdes</td>
+                <td>${extraction.reason}</td>
+                <td><span class="extraction-status status-${extraction.status}">${
+                    extraction.status === 'approved' ? 'Approuvé' : 
+                    extraction.status === 'pending' ? 'En attente' :
+                    extraction.status === 'rejected' ? 'Rejeté' : extraction.status
+                }</span></td>
+                <td>${extraction.approvedBy || '-'}</td>
+            </tr>
+        `;
+    });
+    
+    html += '</tbody></table></div>';
+    container.innerHTML = html;
+}
+
+function updateAdminPettyCashStatistics() {
+    const now = new Date();
+    const currentMonth = now.getMonth() + 1;
+    const currentYear = now.getFullYear();
+    
+    const monthlyExtractions = state.pettyCashTransactions.filter(t => {
+        const [year, month] = t.date.split('-');
+        return parseInt(year) === currentYear && parseInt(month) === currentMonth;
+    });
+    
+    const monthlyTotal = monthlyExtractions.reduce((sum, t) => sum + t.amount, 0);
+    const pendingCount = state.pettyCashTransactions.filter(t => 
+        t.status === 'pending' || t.status === 'requested'
+    ).length;
+    
+    document.getElementById('admin-monthly-extraction-total').textContent = monthlyTotal.toLocaleString() + ' Gdes';
+    document.getElementById('admin-pending-count').textContent = pendingCount;
+}
+
+// Actions admin sur la petite caisse (exposées globalement)
+window.addAdminPettyCash = function() {
+    const amount = parseFloat(document.getElementById('admin-add-petty-cash-amount').value);
+    
+    if (!amount || amount <= 0) {
+        alert("Veuillez saisir un montant valide!");
+        return;
+    }
+    
+    if (amount > state.mainCash) {
+        alert("Fonds insuffisants dans la grande caisse!");
+        return;
+    }
+    
+    if (confirm(`Ajouter ${amount} Gdes à la petite caisse depuis la grande caisse?`)) {
+        state.mainCash -= amount;
+        state.pettyCash += amount;
+        
+        const transferRecord = {
+            id: 'ADMIN-TRANSFER-' + Date.now(),
+            date: new Date().toISOString().split('T')[0],
+            time: new Date().toLocaleTimeString('fr-FR'),
+            amount: amount,
+            from: 'main_cash',
+            to: 'petty_cash',
+            by: state.currentUser.username,
+            status: 'approved',
+            type: 'transfer',
+            notes: 'Ajout administratif à la petite caisse'
+        };
+        
+        state.pettyCashTransactions.push(transferRecord);
+        
+        alert(`Ajout de ${amount} Gdes effectué avec succès!`);
+        
+        document.getElementById('admin-add-petty-cash-amount').value = '';
+        window.loadAdminPettyCashData();
+        saveStateToLocalStorage();
+    }
+};
+
+window.adjustAdminPettyCash = function() {
+    const adjustment = parseFloat(document.getElementById('admin-adjust-petty-cash-amount').value);
+    const reason = document.getElementById('admin-adjust-petty-cash-reason').value.trim();
+    
+    if (isNaN(adjustment)) {
+        alert("Veuillez saisir un montant d'ajustement valide!");
+        return;
+    }
+    
+    if (!reason) {
+        alert("Veuillez fournir une raison pour l'ajustement!");
+        return;
+    }
+    
+    const newBalance = state.pettyCash + adjustment;
+    if (newBalance < 0) {
+        alert("Le solde ne peut pas être négatif!");
+        return;
+    }
+    
+    state.pettyCash = newBalance;
+    
+    const adjustmentRecord = {
+        id: 'ADMIN-ADJ-' + Date.now(),
+        date: new Date().toISOString().split('T')[0],
+        time: new Date().toLocaleTimeString('fr-FR'),
+        amount: adjustment,
+        type: 'adjustment',
+        reason: 'Ajustement administratif',
+        description: reason,
+        requestedBy: 'system',
+        approvedBy: state.currentUser.username,
+        status: 'approved',
+        notes: `Ajustement administratif: ${reason}`
+    };
+    
+    state.pettyCashTransactions.push(adjustmentRecord);
+    
+    alert(`Solde ajusté de ${adjustment} Gdes. Nouveau solde: ${state.pettyCash} Gdes`);
+    
+    document.getElementById('admin-adjust-petty-cash-amount').value = '';
+    document.getElementById('admin-adjust-petty-cash-reason').value = '';
+    
+    window.loadAdminPettyCashData();
+    saveStateToLocalStorage();
+};
+
+window.requestAdminPettyCashExtraction = function() {
+    alert("Les administrateurs utilisent l'ajout de fonds ou l'ajustement pour gérer la petite caisse.");
+};
+
+window.viewAdminExtractionHistory = function() {
+    const modal = document.createElement('div');
+    modal.className = 'transaction-details-modal';
+    
+    const allExtractions = [...state.pettyCashTransactions]
+        .sort((a, b) => new Date(b.date + ' ' + b.time) - new Date(a.date + ' ' + a.time));
+    
+    let html = `
+        <div class="transaction-details-content">
+            <h3>Historique Administratif des Extractions</h3>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Demandeur</th>
+                            <th>Montant</th>
+                            <th>Raison</th>
+                            <th>Statut</th>
+                            <th>Approuvé par</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+    `;
+    
+    allExtractions.forEach(extraction => {
+        html += `
+            <tr>
+                <td>${extraction.date} ${extraction.time}</td>
+                <td>${extraction.requestedBy}</td>
+                <td>${extraction.amount} Gdes</td>
+                <td>${extraction.reason || extraction.notes || '-'}</td>
+                <td><span class="extraction-status status-${extraction.status}">${extraction.status}</span></td>
+                <td>${extraction.approvedBy || '-'}</td>
+            </tr>
+        `;
+    });
+    
+    html += `
+                    </tbody>
+                </table>
+            </div>
+            <div class="mt-3">
+                <button class="btn btn-secondary" onclick="this.closest('.transaction-details-modal').remove()">
+                    Fermer
+                </button>
+                <button class="btn btn-primary" onclick="window.exportPettyCashTransactions()">
+                    <i class="fas fa-download"></i> Exporter
+                </button>
+            </div>
+        </div>
+    `;
+    
+    modal.innerHTML = html;
+    document.body.appendChild(modal);
+};
+
+window.approveAdminExtraction = function(extractionId) {
+    const extraction = state.pettyCashTransactions.find(t => t.id === extractionId);
+    if (!extraction) return;
+    
+    if (extraction.amount > state.pettyCash) {
+        alert("Solde insuffisant dans la petite caisse!");
+        return;
+    }
+    
+    extraction.status = 'approved';
+    extraction.approvedBy = state.currentUser.username;
+    extraction.approvalDate = new Date().toISOString().split('T')[0];
+    extraction.approvalTime = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+    
+    state.pettyCash -= extraction.amount;
+    
+    const activity = {
+        id: 'ACT' + Date.now(),
+        action: 'admin_approve_extraction',
+        user: state.currentUser.username,
+        timestamp: new Date().toISOString(),
+        details: `Approbation admin de l'extraction ${extractionId}`
+    };
+    state.reports.push(activity);
+    
+    saveStateToLocalStorage();
+    alert("Extraction approuvée avec succès!");
+    window.loadAdminPettyCashData();
+};
+
+window.rejectAdminExtraction = function(extractionId) {
+    const extraction = state.pettyCashTransactions.find(t => t.id === extractionId);
+    if (!extraction) return;
+    
+    const reason = prompt("Raison du rejet:");
+    if (!reason) return;
+    
+    extraction.status = 'rejected';
+    extraction.rejectedBy = state.currentUser.username;
+    extraction.rejectionReason = reason;
+    extraction.rejectionDate = new Date().toISOString().split('T')[0];
+    
+    const activity = {
+        id: 'ACT' + Date.now(),
+        action: 'admin_reject_extraction',
+        user: state.currentUser.username,
+        timestamp: new Date().toISOString(),
+        details: `Rejet admin de l'extraction ${extractionId}: ${reason}`
+    };
+    state.reports.push(activity);
+    
+    saveStateToLocalStorage();
+    alert("Extraction rejetée!");
+    window.loadAdminPettyCashData();
+};
+
+window.viewAdminExtractionDetails = function(extractionId) {
+    const extraction = state.pettyCashTransactions.find(t => t.id === extractionId);
+    if (!extraction) return;
+    
+    const modal = document.createElement('div');
+    modal.className = 'transaction-details-modal';
+    
+    let html = `
+        <div class="transaction-details-content">
+            <h3>Détails Administratifs de l'Extraction</h3>
+            <div class="card">
+                <p><strong>ID:</strong> ${extraction.id}</p>
+                <p><strong>Date:</strong> ${extraction.date} ${extraction.time}</p>
+                <p><strong>Montant:</strong> ${extraction.amount} Gdes</p>
+                <p><strong>Raison:</strong> ${extraction.reason || 'Non spécifiée'}</p>
+                <p><strong>Description:</strong> ${extraction.description || 'Non spécifiée'}</p>
+                <p><strong>Justificatif:</strong> ${extraction.justification || 'Aucun'}</p>
+                <p><strong>Demandé par:</strong> ${extraction.requestedBy}</p>
+                <p><strong>Statut:</strong> ${extraction.status}</p>
+                ${extraction.approvedBy ? `<p><strong>Approuvé par:</strong> ${extraction.approvedBy}</p>` : ''}
+                ${extraction.rejectionReason ? `<p><strong>Raison du rejet:</strong> ${extraction.rejectionReason}</p>` : ''}
+                ${extraction.notes ? `<p><strong>Notes:</strong> ${extraction.notes}</p>` : ''}
+            </div>
+            <div class="mt-3">
+                <button class="btn btn-secondary" onclick="this.closest('.transaction-details-modal').remove()">
+                    Fermer
+                </button>
+            </div>
+        </div>
+    `;
+    
+    modal.innerHTML = html;
+    document.body.appendChild(modal);
+};
+
+// Export CSV global pour la petite caisse (accessible depuis tous les onglets)
+window.exportPettyCashTransactions = function() {
+    let csvContent = "data:text/csv;charset=utf-8,";
+    csvContent += "Date,Demandeur,Montant,Raison,Statut,Approuvé par\n";
+    
+    state.pettyCashTransactions.forEach(t => {
+        csvContent += `${t.date} ${t.time},${t.requestedBy},${t.amount},${t.reason || ''},${t.status},${t.approvedBy || ''}\n`;
+    });
+    
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `petite_caisse_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
 };
 
 // ==================== PARAMÈTRES ====================
@@ -3049,3 +3567,28 @@ function sendMessage() {
     loadConversation(state.currentConversation);
     updateMessageBadge();
 }
+
+// Exporter globalement les fonctions nécessaires
+window.selectTransactionForEdit = selectTransactionForEdit;
+window.viewUserTransactions = viewUserTransactions;
+window.updateCreditDisplay = updateCreditDisplay;
+window.viewCreditHistory = viewCreditHistory;
+window.usePatientCreditPrompt = usePatientCreditPrompt;
+window.deleteMedicationSettings = deleteMedicationSettings;
+window.saveConsultationType = saveConsultationType;
+window.toggleConsultationType = toggleConsultationType;
+window.deleteConsultationType = deleteConsultationType;
+window.saveVitalType = saveVitalType;
+window.toggleVitalType = toggleVitalType;
+window.deleteVitalType = deleteVitalType;
+window.saveLabAnalysisType = saveLabAnalysisType;
+window.toggleLabAnalysisType = toggleLabAnalysisType;
+window.deleteLabAnalysisType = deleteLabAnalysisType;
+window.saveExternalServiceType = saveExternalServiceType;
+window.toggleExternalServiceType = toggleExternalServiceType;
+window.deleteExternalServiceType = deleteExternalServiceType;
+window.toggleUser = toggleUser;
+window.editUser = editUser;
+window.deleteUser = deleteUser;
+window.loadConversation = loadConversation;
+window.updateMessageBadge = updateMessageBadge || function() {}; // Si existe ailleurs

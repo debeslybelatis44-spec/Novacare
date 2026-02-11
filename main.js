@@ -4,68 +4,37 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function initApp() {
-    // Initialiser les données de démo
+    // Charger les données
     loadDemoData();
-    
-    // Initialiser l'affichage du logo
     updateLogoDisplay();
-    
-    // Vérifier l'expiration des privilèges au démarrage
     checkPrivilegeExpirationAll();
-    
-    // Mettre à jour les badges de messages
     updateMessageBadge();
     
-    console.log("Système hospitalier initialisé avec succès!");
-    
-    // Initialiser les comptes de crédit si non existants
+    // Initialiser les structures de données
     if (!state.creditAccounts) state.creditAccounts = {};
     if (!state.cashierBalances) state.cashierBalances = {};
     if (!state.mainCash) state.mainCash = 1000000;
     if (!state.pettyCash) state.pettyCash = 50000;
     if (!state.pettyCashTransactions) state.pettyCashTransactions = [];
     if (!state.reports) state.reports = [];
+    if (!state.modulesInitialized) {
+        state.modulesInitialized = {
+            admin: false,
+            responsible: false,
+            cashier: false,
+            secretary: false,
+            pharmacy: false,
+            settings: false,
+            messaging: false
+        };
+    }
     
-    // Initialiser les transactions par utilisateur
     initializeUserTransactions();
     
-    // Initialiser les composants globaux supplémentaires
-    if (typeof setupCashier === 'function') {
-        setupCashier();
-    }
-    
-    if (typeof setupAdmin === 'function') {
-        setupAdmin();
-    }
-    
-    if (typeof setupSettings === 'function') {
-        setupSettings();
-    }
-    
-    if (typeof setupMessaging === 'function') {
-        setupMessaging();
-    }
-    
-    // Initialiser la pharmacie si elle est disponible
-    if (typeof setupPharmacy === 'function') {
-        setupPharmacy();
-    }
-    
-    // Initialiser le secrétariat si disponible
-    if (typeof setupSecretary === 'function') {
-        setupSecretary();
-    }
-    
-    // Initialiser les fonctionnalités responsables si l'utilisateur est connecté
-    if (state.currentRole === 'responsible' && typeof setupResponsibleFeatures === 'function') {
-        setupResponsibleFeatures();
-    }
-    
-    console.log("Toutes les fonctionnalités initialisées!");
+    console.log("Système hospitalier initialisé avec succès!");
 }
 
 function initializeUserTransactions() {
-    // Initialiser les transactions par utilisateur
     state.userTransactions = {};
     state.transactions.forEach(t => {
         if (!state.userTransactions[t.createdBy]) {
@@ -75,7 +44,38 @@ function initializeUserTransactions() {
     });
 }
 
-// Fonctions globales pour le système
+// Point d'entrée unique pour l'initialisation des modules après connexion
+window.initializeRoleModules = function(role) {
+    switch(role) {
+        case 'admin':
+            if (typeof window.initializeAdminFeatures === 'function') {
+                window.initializeAdminFeatures();
+            }
+            break;
+        case 'responsible':
+            if (typeof window.initializeResponsibleFeatures === 'function') {
+                window.initializeResponsibleFeatures();
+            }
+            break;
+        case 'cashier':
+            if (typeof window.initializeCashierFeatures === 'function') {
+                window.initializeCashierFeatures();
+            }
+            break;
+        case 'secretary':
+            if (typeof window.initializeSecretaryFeatures === 'function') {
+                window.initializeSecretaryFeatures();
+            }
+            break;
+        case 'pharmacy':
+            if (typeof window.initializePharmacyFeatures === 'function') {
+                window.initializePharmacyFeatures();
+            }
+            break;
+    }
+};
+
+// Fonctions globales
 window.selectTransactionForEdit = function(transactionId) {
     if (state.currentRole === 'responsible') {
         alert("Vous n'avez pas la permission de modifier les transactions!");
@@ -105,32 +105,26 @@ window.editUserTransactions = function(username) {
     const newAmount = parseFloat(prompt(`Modifier le total des transactions pour ${user.name} (${username}):\nValeur actuelle: ${state.userTransactions[username] ? state.userTransactions[username].reduce((sum, t) => sum + t.amount, 0) : 0} Gdes`));
     
     if (!isNaN(newAmount)) {
-        // Pour l'exemple, nous ajustons simplement une transaction
         if (state.userTransactions[username] && state.userTransactions[username].length > 0) {
             const transaction = state.userTransactions[username][0];
             const oldAmount = transaction.amount;
             transaction.amount = newAmount;
             
-            // Mettre à jour les totaux
             alert(`Transaction ajustée de ${oldAmount} à ${newAmount} Gdes`);
             
-            // Recharger les statistiques si nécessaire
             if (typeof updateAdminStats === 'function') updateAdminStats();
             if (typeof updateUserTransactionTotals === 'function') updateUserTransactionTotals();
         }
     }
 };
 
-// Fonction pour vérifier les permissions selon le rôle
 window.checkAdminPermission = function(permission) {
     if (!state.currentRole || !state.roles[state.currentRole]) {
         return false;
     }
-    
     return state.roles[state.currentRole][permission] === true;
 };
 
-// Fonction pour exporter le rapport utilisateur en CSV
 window.exportUserReportToCSV = function() {
     if (state.currentRole === 'responsible') {
         alert("Vous n'avez pas la permission d'exporter des rapports détaillés!");
