@@ -4,37 +4,62 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function initApp() {
-    // Charger les données
+    // Initialiser les données de démo
     loadDemoData();
+    
+    // Initialiser l'affichage du logo
     updateLogoDisplay();
+    
+    // Vérifier l'expiration des privilèges au démarrage
     checkPrivilegeExpirationAll();
+    
+    // Mettre à jour les badges de messages
     updateMessageBadge();
     
-    // Initialiser les structures de données
+    console.log("Système hospitalier initialisé avec succès!");
+    
+    // Initialiser les comptes de crédit si non existants
     if (!state.creditAccounts) state.creditAccounts = {};
     if (!state.cashierBalances) state.cashierBalances = {};
     if (!state.mainCash) state.mainCash = 1000000;
-    if (!state.pettyCash) state.pettyCash = 50000;
-    if (!state.pettyCashTransactions) state.pettyCashTransactions = [];
+    if (!state.pettyCash) state.pettyCash = 0;
     if (!state.reports) state.reports = [];
-    if (!state.modulesInitialized) {
-        state.modulesInitialized = {
-            admin: false,
-            responsible: false,
-            cashier: false,
-            secretary: false,
-            pharmacy: false,
-            settings: false,
-            messaging: false
-        };
-    }
     
+    // Initialiser les transactions par utilisateur
     initializeUserTransactions();
     
-    console.log("Système hospitalier initialisé avec succès!");
+    // Initialiser les composants globaux supplémentaires
+    if (typeof setupCashier === 'function') {
+        setupCashier();
+    }
+    
+    if (typeof setupAdmin === 'function') {
+        setupAdmin();
+    }
+    
+    if (typeof setupSettings === 'function') {
+        setupSettings();
+    }
+    
+    if (typeof setupMessaging === 'function') {
+        setupMessaging();
+    }
+    
+    // Initialiser la pharmacie si elle est disponible
+    if (typeof setupPharmacy === 'function') {
+        setupPharmacy();
+    }
+    
+    // Initialiser le secrétariat si disponible
+    if (typeof setupSecretary === 'function') {
+        setupSecretary();
+    }
+    
+    console.log("Nouvelles fonctionnalités d'administration initialisées!");
 }
 
 function initializeUserTransactions() {
+    // Initialiser les transactions par utilisateur
     state.userTransactions = {};
     state.transactions.forEach(t => {
         if (!state.userTransactions[t.createdBy]) {
@@ -44,53 +69,13 @@ function initializeUserTransactions() {
     });
 }
 
-// Point d'entrée unique pour l'initialisation des modules après connexion
-window.initializeRoleModules = function(role) {
-    switch(role) {
-        case 'admin':
-            if (typeof window.initializeAdminFeatures === 'function') {
-                window.initializeAdminFeatures();
-            }
-            break;
-        case 'responsible':
-            if (typeof window.initializeResponsibleFeatures === 'function') {
-                window.initializeResponsibleFeatures();
-            }
-            break;
-        case 'cashier':
-            if (typeof window.initializeCashierFeatures === 'function') {
-                window.initializeCashierFeatures();
-            }
-            break;
-        case 'secretary':
-            if (typeof window.initializeSecretaryFeatures === 'function') {
-                window.initializeSecretaryFeatures();
-            }
-            break;
-        case 'pharmacy':
-            if (typeof window.initializePharmacyFeatures === 'function') {
-                window.initializePharmacyFeatures();
-            }
-            break;
-    }
-};
-
-// Fonctions globales
+// Fonctions globales pour le système
 window.selectTransactionForEdit = function(transactionId) {
-    if (state.currentRole === 'responsible') {
-        alert("Vous n'avez pas la permission de modifier les transactions!");
-        return;
-    }
     document.getElementById('selected-transaction-id').value = transactionId;
     alert(`Transaction ${transactionId} sélectionnée pour modification`);
 };
 
 window.editUserTransactions = function(username) {
-    if (state.currentRole === 'responsible') {
-        alert("Vous n'avez pas la permission de modifier les transactions utilisateur!");
-        return;
-    }
-    
     const user = state.users.find(u => u.username === username);
     if (!user) {
         alert("Utilisateur non trouvé!");
@@ -105,32 +90,33 @@ window.editUserTransactions = function(username) {
     const newAmount = parseFloat(prompt(`Modifier le total des transactions pour ${user.name} (${username}):\nValeur actuelle: ${state.userTransactions[username] ? state.userTransactions[username].reduce((sum, t) => sum + t.amount, 0) : 0} Gdes`));
     
     if (!isNaN(newAmount)) {
+        // Pour l'exemple, nous ajustons simplement une transaction
         if (state.userTransactions[username] && state.userTransactions[username].length > 0) {
             const transaction = state.userTransactions[username][0];
             const oldAmount = transaction.amount;
             transaction.amount = newAmount;
             
+            // Mettre à jour les totaux
             alert(`Transaction ajustée de ${oldAmount} à ${newAmount} Gdes`);
             
+            // Recharger les statistiques si nécessaire
             if (typeof updateAdminStats === 'function') updateAdminStats();
             if (typeof updateUserTransactionTotals === 'function') updateUserTransactionTotals();
         }
     }
 };
 
+// Fonction pour vérifier les permissions selon le rôle
 window.checkAdminPermission = function(permission) {
     if (!state.currentRole || !state.roles[state.currentRole]) {
         return false;
     }
+    
     return state.roles[state.currentRole][permission] === true;
 };
 
+// Fonction pour exporter le rapport utilisateur en CSV
 window.exportUserReportToCSV = function() {
-    if (state.currentRole === 'responsible') {
-        alert("Vous n'avez pas la permission d'exporter des rapports détaillés!");
-        return;
-    }
-    
     let csvContent = "data:text/csv;charset=utf-8,";
     let rows = [];
     
