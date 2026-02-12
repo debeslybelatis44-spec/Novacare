@@ -107,7 +107,7 @@ function searchAdminPatient() {
                 <td>${t.status}</td>
                 <td>${t.type}</td>
                 <td>
-                    <button class="btn btn-sm btn-warning" onclick="selectTransactionForEdit('${t.id}')">Sélectionner</button>
+                    <button class="btn btn-sm btn-warning" onclick="openEditTransactionModal('${t.id}')">Sélectionner</button>
                 </td>
             </tr>`;
         });
@@ -117,6 +117,19 @@ function searchAdminPatient() {
     
     // Afficher le crédit du patient
     updateCreditDisplay(patientId);
+
+    // Bouton d'impression de la fiche patient
+    let printBtn = document.getElementById('print-patient-sheet-btn');
+    if (!printBtn) {
+        printBtn = document.createElement('button');
+        printBtn.id = 'print-patient-sheet-btn';
+        printBtn.className = 'btn btn-info mt-2';
+        printBtn.innerHTML = '<i class="fas fa-print"></i> Imprimer la fiche du patient';
+        printBtn.onclick = () => printPatientTransactions(patient.id);
+        document.getElementById('admin-patient-details').appendChild(printBtn);
+    } else {
+        printBtn.onclick = () => printPatientTransactions(patient.id);
+    }
 }
 
 function savePrivilege() {
@@ -329,7 +342,7 @@ function updateRecentTransactions() {
                 <td>${transaction.createdBy}</td>
                 <td><span class="${transaction.status === 'paid' ? 'status-paid' : 'status-unpaid'}">${transaction.status === 'paid' ? 'Payé' : 'Non payé'}</span></td>
                 <td>
-                    <button class="btn btn-sm btn-warning" onclick="selectTransactionForEdit('${transaction.id}')">
+                    <button class="btn btn-sm btn-warning" onclick="openEditTransactionModal('${transaction.id}')">
                         Sélectionner
                     </button>
                 </td>
@@ -538,62 +551,14 @@ function viewCreditHistory(patientId = null) {
     document.body.appendChild(modal);
 }
 
-// Modifier une transaction existante
+// Modifier une transaction existante (ancienne méthode - redirige vers la nouvelle)
 function editTransaction() {
     const transactionId = document.getElementById('selected-transaction-id').value;
     if (!transactionId) {
         alert("Veuillez sélectionner une transaction!");
         return;
     }
-    
-    const transaction = state.transactions.find(t => t.id === transactionId);
-    if (!transaction) {
-        alert("Transaction non trouvée!");
-        return;
-    }
-    
-    // Vérifier les permissions
-    if (state.currentRole === 'responsible' && !state.roles.responsible.canModifyAllTransactions) {
-        alert("Vous n'avez pas la permission de modifier les transactions!");
-        return;
-    }
-    
-    const newAmount = parseFloat(prompt("Nouveau montant (Gdes):", transaction.amount));
-    if (!newAmount || newAmount < 0) {
-        alert("Montant invalide!");
-        return;
-    }
-    
-    const oldAmount = transaction.amount;
-    transaction.amount = newAmount;
-    
-    // Mettre à jour les soldes si la transaction était payée
-    if (transaction.status === 'paid') {
-        const difference = newAmount - oldAmount;
-        
-        // Mettre à jour le solde du caissier si applicable
-        if (state.cashierBalances[transaction.paymentAgent]) {
-            state.cashierBalances[transaction.paymentAgent].balance += difference;
-        }
-        
-        // Mettre à jour la grande caisse
-        state.mainCash += difference;
-    }
-    
-    // Ajouter une note d'audit
-    transaction.modifications = transaction.modifications || [];
-    transaction.modifications.push({
-        date: new Date().toISOString().split('T')[0],
-        time: new Date().toLocaleTimeString('fr-FR'),
-        by: state.currentUser.username,
-        oldAmount: oldAmount,
-        newAmount: newAmount,
-        reason: 'Modification par administrateur'
-    });
-    
-    alert("Transaction modifiée avec succès!");
-    updateAdminStats();
-    updateRecentTransactions();
+    openEditTransactionModal(transactionId);
 }
 
 // Supprimer une transaction
@@ -1115,7 +1080,7 @@ function viewUserTransactions(username) {
                 <td>${t.amount} Gdes</td>
                 <td>${t.status}</td>
                 <td>
-                    <button class="btn btn-warning btn-sm" onclick="selectTransactionForEdit('${t.id}')">
+                    <button class="btn btn-warning btn-sm" onclick="openEditTransactionModal('${t.id}')">
                         Sélectionner
                     </button>
                 </td>
@@ -1135,10 +1100,397 @@ function viewUserTransactions(username) {
     document.body.appendChild(modal);
 }
 
-// Sélectionner une transaction pour modification
+// Sélectionner une transaction pour modification (ancienne méthode - redirige vers la nouvelle)
 function selectTransactionForEdit(transactionId) {
-    document.getElementById('selected-transaction-id').value = transactionId;
-    alert(`Transaction ${transactionId} sélectionnée pour modification`);
+    openEditTransactionModal(transactionId);
+}
+
+// ==================== ÉDITION AVANCÉE DES TRANSACTIONS ====================
+function openEditTransactionModal(transactionId) {
+    const transaction = state.transactions.find(t => t.id === transactionId);
+    if (!transaction) {
+        alert("Transaction introuvable !");
+        return;
+    }
+
+    // Vérification des droits
+    if (state.currentRole !== 'admin' && state.currentRole !== 'responsible') {
+        alert("Vous n'avez pas la permission de modifier cette transaction.");
+        return;
+    }
+
+    const modal = document.createElement('div');
+    modal.className = 'transaction-details-modal';
+    modal.style.zIndex = '2000';
+
+    let content = `
+        <div class="transaction-details-content" style="max-width: 600px;">
+            <h3>Modifier la transaction</h3>
+            <p><strong>ID :</strong> ${transaction.id}</p>
+            <p><strong>Patient :</strong> ${transaction.patientName} (${transaction.patientId})</p>
+            <p><strong>Date :</strong> ${transaction.date} ${transaction.time}</p>
+            <hr>
+            <form id="edit-transaction-form">
+                <div class="form-group">
+                    <label>Type de service</label>
+                    <select id="edit-service-type" class="form-control">
+                        <option value="consultation" ${transaction.type === 'consultation' ? 'selected' : ''}>Consultation</option>
+                        <option value="lab" ${transaction.type === 'lab' ? 'selected' : ''}>Laboratoire</option>
+                        <option value="medication" ${transaction.type === 'medication' ? 'selected' : ''}>Médicament</option>
+                        <option value="external" ${transaction.type === 'external' ? 'selected' : ''}>Service externe</option>
+                    </select>
+                </div>
+                <div id="edit-service-specific"></div>
+                <div class="form-group">
+                    <label>Prix (Gdes)</label>
+                    <input type="number" id="edit-amount" class="form-control" value="${transaction.amount}" step="0.01" min="0">
+                </div>
+                <div class="form-group">
+                    <label>Statut</label>
+                    <select id="edit-status" class="form-control">
+                        <option value="paid" ${transaction.status === 'paid' ? 'selected' : ''}>Payé</option>
+                        <option value="unpaid" ${transaction.status === 'unpaid' ? 'selected' : ''}>Non payé</option>
+                        <option value="partial" ${transaction.status === 'partial' ? 'selected' : ''}>Partiel</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Méthode de paiement</label>
+                    <select id="edit-payment-method" class="form-control">
+                        <option value="cash" ${transaction.paymentMethod === 'cash' ? 'selected' : ''}>Espèces</option>
+                        <option value="card" ${transaction.paymentMethod === 'card' ? 'selected' : ''}>Carte</option>
+                        <option value="vip" ${transaction.paymentMethod === 'vip' ? 'selected' : ''}>VIP</option>
+                        <option value="credit" ${transaction.paymentMethod === 'credit' ? 'selected' : ''}>Crédit</option>
+                        <option value="">Non défini</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Note / raison de la modification</label>
+                    <textarea id="edit-note" class="form-control" rows="2" placeholder="Saisissez la raison de la modification..."></textarea>
+                </div>
+            </form>
+            <div class="mt-3 d-flex justify-between">
+                <button class="btn btn-success" onclick="saveTransactionChanges('${transactionId}')">Enregistrer</button>
+                <button class="btn btn-secondary" onclick="this.closest('.transaction-details-modal').remove()">Annuler</button>
+            </div>
+        </div>
+    `;
+
+    modal.innerHTML = content;
+    document.body.appendChild(modal);
+
+    // Charger les options spécifiques au type de service
+    updateEditServiceSpecific(transaction);
+    document.getElementById('edit-service-type').addEventListener('change', function() {
+        updateEditServiceSpecific(transaction);
+    });
+}
+
+function updateEditServiceSpecific(transaction) {
+    const type = document.getElementById('edit-service-type').value;
+    const container = document.getElementById('edit-service-specific');
+    let html = '';
+
+    if (type === 'consultation') {
+        html = `
+            <div class="form-group">
+                <label>Type de consultation</label>
+                <select id="edit-consultation-type" class="form-control">
+                    ${state.consultationTypes.filter(c => c.active).map(c => 
+                        `<option value="${c.id}" ${transaction.service === c.name ? 'selected' : ''} 
+                                data-price="${c.price}">${c.name} - ${c.price} Gdes</option>`
+                    ).join('')}
+                </select>
+            </div>
+        `;
+        // Mise à jour automatique du prix quand le type change
+        setTimeout(() => {
+            document.getElementById('edit-consultation-type')?.addEventListener('change', function() {
+                const selected = this.options[this.selectedIndex];
+                const price = parseFloat(selected.dataset.price);
+                document.getElementById('edit-amount').value = price;
+            });
+        }, 100);
+    } else if (type === 'medication') {
+        html = `
+            <div class="form-group">
+                <label>Médicament</label>
+                <select id="edit-medication-id" class="form-control">
+                    ${state.medicationStock.map(med => 
+                        `<option value="${med.id}" ${transaction.medicationId === med.id ? 'selected' : ''}
+                                data-price="${med.price}" data-name="${med.name}">${med.name} - ${med.price} Gdes (stock: ${med.quantity})</option>`
+                    ).join('')}
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Quantité</label>
+                <input type="number" id="edit-medication-quantity" class="form-control" value="${transaction.quantity || 1}" min="1">
+            </div>
+        `;
+        setTimeout(() => {
+            const medSelect = document.getElementById('edit-medication-id');
+            const qtyInput = document.getElementById('edit-medication-quantity');
+            const amountInput = document.getElementById('edit-amount');
+            function updateMedAmount() {
+                if (medSelect && qtyInput) {
+                    const selected = medSelect.options[medSelect.selectedIndex];
+                    const price = parseFloat(selected.dataset.price);
+                    const qty = parseInt(qtyInput.value) || 1;
+                    amountInput.value = (price * qty).toFixed(2);
+                }
+            }
+            medSelect?.addEventListener('change', updateMedAmount);
+            qtyInput?.addEventListener('input', updateMedAmount);
+        }, 100);
+    } else if (type === 'lab') {
+        html = `
+            <div class="form-group">
+                <label>Examen de laboratoire</label>
+                <select id="edit-lab-analysis" class="form-control">
+                    ${state.labAnalysisTypes.filter(l => l.active).map(l => 
+                        `<option value="${l.id}" ${transaction.service === l.name ? 'selected' : ''}
+                                data-price="${l.price}">${l.name} - ${l.price} Gdes</option>`
+                    ).join('')}
+                </select>
+            </div>
+        `;
+        setTimeout(() => {
+            document.getElementById('edit-lab-analysis')?.addEventListener('change', function() {
+                const selected = this.options[this.selectedIndex];
+                const price = parseFloat(selected.dataset.price);
+                document.getElementById('edit-amount').value = price;
+            });
+        }, 100);
+    } else if (type === 'external') {
+        html = `
+            <div class="form-group">
+                <label>Service externe</label>
+                <select id="edit-external-service" class="form-control">
+                    ${state.externalServiceTypes.filter(s => s.active).map(s => 
+                        `<option value="${s.id}" ${transaction.service === s.name ? 'selected' : ''}
+                                data-price="${s.price}">${s.name} - ${s.price} Gdes</option>`
+                    ).join('')}
+                </select>
+            </div>
+        `;
+        setTimeout(() => {
+            document.getElementById('edit-external-service')?.addEventListener('change', function() {
+                const selected = this.options[this.selectedIndex];
+                const price = parseFloat(selected.dataset.price);
+                document.getElementById('edit-amount').value = price;
+            });
+        }, 100);
+    }
+
+    container.innerHTML = html;
+}
+
+function saveTransactionChanges(transactionId) {
+    const transaction = state.transactions.find(t => t.id === transactionId);
+    if (!transaction) return;
+
+    const oldAmount = transaction.amount;
+    const newAmount = parseFloat(document.getElementById('edit-amount').value);
+    const newStatus = document.getElementById('edit-status').value;
+    const newPaymentMethod = document.getElementById('edit-payment-method').value;
+    const note = document.getElementById('edit-note').value || 'Modification administrative';
+
+    if (isNaN(newAmount) || newAmount < 0) {
+        alert("Le montant doit être un nombre positif !");
+        return;
+    }
+
+    // Enregistrer l'état précédent
+    const modifications = transaction.modifications || [];
+    modifications.push({
+        date: new Date().toISOString().split('T')[0],
+        time: new Date().toLocaleTimeString('fr-FR'),
+        by: state.currentUser.username,
+        oldAmount: oldAmount,
+        newAmount: newAmount,
+        oldStatus: transaction.status,
+        newStatus: newStatus,
+        oldPaymentMethod: transaction.paymentMethod,
+        newPaymentMethod: newPaymentMethod,
+        reason: note
+    });
+
+    // Mettre à jour les champs principaux
+    transaction.amount = newAmount;
+    transaction.status = newStatus;
+    transaction.paymentMethod = newPaymentMethod;
+    transaction.modifications = modifications;
+
+    // Mise à jour des champs spécifiques selon le type
+    const type = document.getElementById('edit-service-type').value;
+    transaction.type = type;
+
+    if (type === 'consultation') {
+        const select = document.getElementById('edit-consultation-type');
+        if (select) {
+            const option = select.options[select.selectedIndex];
+            transaction.service = option.text.split(' - ')[0];
+            transaction.consultationTypeId = option.value;
+        }
+    } else if (type === 'medication') {
+        const medSelect = document.getElementById('edit-medication-id');
+        if (medSelect) {
+            const medOption = medSelect.options[medSelect.selectedIndex];
+            transaction.service = medOption.dataset.name;
+            transaction.medicationId = medOption.value;
+            transaction.quantity = parseInt(document.getElementById('edit-medication-quantity').value) || 1;
+        }
+    } else if (type === 'lab') {
+        const select = document.getElementById('edit-lab-analysis');
+        if (select) {
+            const option = select.options[select.selectedIndex];
+            transaction.service = option.text.split(' - ')[0];
+            transaction.labAnalysisId = option.value;
+        }
+    } else if (type === 'external') {
+        const select = document.getElementById('edit-external-service');
+        if (select) {
+            const option = select.options[select.selectedIndex];
+            transaction.service = option.text.split(' - ')[0];
+            transaction.externalServiceId = option.value;
+        }
+    }
+
+    // Gestion des écarts de caisse si la transaction était déjà payée
+    if (transaction.status === 'paid' && oldAmount !== newAmount) {
+        const difference = newAmount - oldAmount;
+        state.mainCash += difference;
+
+        // Ajuster le solde du caissier
+        if (transaction.paymentAgent && state.cashierBalances[transaction.paymentAgent]) {
+            state.cashierBalances[transaction.paymentAgent].balance += difference;
+        }
+
+        // Si diminution du prix, proposer un remboursement
+        if (difference < 0) {
+            alert(`ATTENTION : Le montant a diminué de ${Math.abs(difference)} Gdes.\nVeuillez rembourser cette somme au patient.`);
+        } else if (difference > 0) {
+            alert(`Le montant a augmenté de ${difference} Gdes.\nVeuillez encaisser cette somme auprès du patient.`);
+        }
+    }
+
+    // Fermer le modal
+    const modal = document.querySelector('.transaction-details-modal');
+    if (modal) modal.remove();
+
+    alert(`Transaction ${transactionId} modifiée avec succès !`);
+    
+    // Rafraîchir les affichages
+    if (document.getElementById('admin-patient-search')) {
+        searchAdminPatient();
+    }
+    updateAdminStats();
+    updateRecentTransactions();
+    saveStateToLocalStorage();
+}
+
+// ==================== IMPRESSION FICHE PATIENT ====================
+function printPatientTransactions(patientId) {
+    const patient = state.patients.find(p => p.id === patientId);
+    if (!patient) {
+        alert("Patient introuvable !");
+        return;
+    }
+
+    const transactions = state.transactions
+        .filter(t => t.patientId === patientId)
+        .sort((a, b) => new Date(b.date + ' ' + b.time) - new Date(a.date + ' ' + a.time));
+
+    const hospitalName = document.getElementById('hospital-name')?.value || 'Hôpital';
+    const hospitalAddress = document.getElementById('hospital-address')?.value || '';
+    const hospitalPhone = document.getElementById('hospital-phone')?.value || '';
+
+    let html = `
+        <html>
+        <head>
+            <title>Fiche patient - ${patient.fullName}</title>
+            <style>
+                body { font-family: Arial, sans-serif; padding: 20px; }
+                .header { text-align: center; margin-bottom: 30px; }
+                .patient-info { margin: 20px 0; padding: 10px; background: #f5f5f5; border-radius: 5px; }
+                table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+                th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+                th { background-color: #007bff; color: white; }
+                .total-row { font-weight: bold; background-color: #e9ecef; }
+                @media print { .no-print { display: none; } }
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <h2>${hospitalName}</h2>
+                <p>${hospitalAddress}</p>
+                <p>${hospitalPhone ? 'Tél: ' + hospitalPhone : ''}</p>
+                <h3>Fiche récapitulative des transactions</h3>
+            </div>
+            <div class="patient-info">
+                <p><strong>Patient :</strong> ${patient.fullName} (${patient.id})</p>
+                <p><strong>Date de naissance :</strong> ${patient.birthDate || 'Non renseignée'}</p>
+                <p><strong>Téléphone :</strong> ${patient.phone || 'Non renseigné'}</p>
+                <p><strong>Adresse :</strong> ${patient.address || 'Non renseignée'}</p>
+                <p><strong>Date d'enregistrement :</strong> ${patient.registrationDate || ''}</p>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Service</th>
+                        <th>Montant (Gdes)</th>
+                        <th>Statut</th>
+                        <th>Paiement</th>
+                        <th>Agent</th>
+                    </tr>
+                </thead>
+                <tbody>
+    `;
+
+    let totalPaid = 0, totalUnpaid = 0;
+    transactions.forEach(t => {
+        const status = t.status === 'paid' ? 'Payé' : (t.status === 'unpaid' ? 'Impayé' : 'Partiel');
+        html += `
+            <tr>
+                <td>${t.date} ${t.time}</td>
+                <td>${t.service}</td>
+                <td style="text-align: right;">${t.amount.toFixed(2)}</td>
+                <td>${status}</td>
+                <td>${t.paymentMethod || '-'}</td>
+                <td>${t.paymentAgent || t.createdBy || '-'}</td>
+            </tr>
+        `;
+        if (t.status === 'paid') totalPaid += t.amount;
+        else totalUnpaid += t.amount;
+    });
+
+    html += `
+                </tbody>
+                <tfoot>
+                    <tr class="total-row">
+                        <td colspan="2"><strong>Total payé</strong></td>
+                        <td style="text-align: right;"><strong>${totalPaid.toFixed(2)} Gdes</strong></td>
+                        <td colspan="3"></td>
+                    </tr>
+                    <tr class="total-row">
+                        <td colspan="2"><strong>Total impayé</strong></td>
+                        <td style="text-align: right;"><strong>${totalUnpaid.toFixed(2)} Gdes</strong></td>
+                        <td colspan="3"></td>
+                    </tr>
+                </tfoot>
+            </table>
+            <p style="margin-top: 30px; text-align: right;">Édité le ${new Date().toLocaleDateString('fr-FR')} par ${state.currentUser.name}</p>
+            <div class="no-print" style="margin-top: 20px; text-align: center;">
+                <button onclick="window.print()">Imprimer</button>
+                <button onclick="window.close()">Fermer</button>
+            </div>
+        </body>
+        </html>
+    `;
+
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(html);
+    printWindow.document.close();
 }
 
 // Exporter un rapport en CSV

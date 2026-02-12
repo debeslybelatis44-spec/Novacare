@@ -63,6 +63,11 @@ function setupLogin() {
         // Initialiser les nouvelles fonctionnalités d'administration
         if (typeof updateAdminExtendedDisplay === 'function') updateAdminExtendedDisplay();
         if (typeof updateUserTransactionTotals === 'function') updateUserTransactionTotals();
+        
+        // 🔧 Initialiser le module responsable si le rôle est responsible
+        if (state.currentRole === 'responsible' && typeof setupResponsible === 'function') {
+            setupResponsible();
+        }
     });
 
     document.getElementById('logout-btn').addEventListener('click', () => {
@@ -82,11 +87,11 @@ function setupRoleBasedNavigation() {
         if (role === 'admin') {
             tab.classList.remove('hidden');
         } else if (role === 'responsible') {
-            // Le responsable a accès à tout sauf paramètres
-            if (target === 'settings') {
-                tab.classList.add('hidden');
-            } else {
+            // 🔧 Responsable : seulement dashboard, administration et messagerie
+            if (['dashboard', 'administration', 'messaging'].includes(target)) {
                 tab.classList.remove('hidden');
+            } else {
+                tab.classList.add('hidden');
             }
         } else if (role === 'secretary') {
             if (['dashboard', 'secretary', 'messaging'].includes(target)) {
@@ -127,6 +132,7 @@ function setupRoleBasedNavigation() {
         }
     });
     
+    // Activer le premier onglet visible
     const visibleTabs = document.querySelectorAll('.nav-tab:not(.hidden)');
     if (visibleTabs.length > 0) {
         visibleTabs.forEach(t => t.classList.remove('active'));
@@ -154,10 +160,15 @@ function setupNavigation() {
                 updateConsultationTypesSelect();
                 if (typeof loadAppointmentsList === 'function') loadAppointmentsList();
             } else if (target === 'administration') {
-                if (typeof updateAdminStats === 'function') updateAdminStats();
-                if (typeof updateCharts === 'function') updateCharts();
-                if (typeof updateAdminExtendedDisplay === 'function') updateAdminExtendedDisplay();
-                if (typeof updateUserTransactionTotals === 'function') updateUserTransactionTotals();
+                // 🔧 Selon le rôle, on appelle les bonnes fonctions de mise à jour
+                if (state.currentRole === 'responsible') {
+                    if (typeof respUpdateAdminDisplay === 'function') respUpdateAdminDisplay();
+                } else {
+                    if (typeof updateAdminStats === 'function') updateAdminStats();
+                    if (typeof updateCharts === 'function') updateCharts();
+                    if (typeof updateAdminExtendedDisplay === 'function') updateAdminExtendedDisplay();
+                    if (typeof updateUserTransactionTotals === 'function') updateUserTransactionTotals();
+                }
             } else if (target === 'pharmacy') {
                 if (typeof updateMedicationStock === 'function') updateMedicationStock();
             } else if (target === 'messaging') {
@@ -179,6 +190,8 @@ function updateRoleDashboard() {
     let html = '';
     
     if (role === 'admin' || role === 'responsible') {
+        // Le tableau de bord est identique pour admin et responsable
+        // (Vous pouvez personnaliser celui du responsable si nécessaire)
         const totalCredit = Object.values(state.creditAccounts || {}).reduce((sum, acc) => sum + (acc.balance || 0), 0);
         
         html = `
