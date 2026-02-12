@@ -1,708 +1,624 @@
-// Fonctionnalités spécifiques au rôle Responsable/Directeur
-// Version sans conflit avec admin.js
+// ==================== RESPONSABLE (rôle restreint) ====================
+// Fichier: responsible.js
+// Dépendances: state, fonctions utilitaires (updateAdminStats, updateCharts, etc.)
 
 document.addEventListener('DOMContentLoaded', () => {
-    // Ne pas initialiser automatiquement, attendre la connexion
+    // Le responsable utilise la même section #administration mais avec ses propres gestionnaires
+    if (document.getElementById('admin-patient-search')) {
+        // On attend que le rôle soit déterminé (après login)
+        // L'initialisation réelle se fera dans setupResponsible() appelé depuis auth.js
+    }
 });
 
-// Point d'entrée unique pour l'initialisation des fonctionnalités responsable
-window.initializeResponsibleFeatures = function() {
+// Point d'entrée principal – à appeler depuis auth.js après connexion en tant que 'responsible'
+function setupResponsible() {
     if (state.currentRole !== 'responsible') return;
-    
-    // Éviter les initialisations multiples
-    if (state.modulesInitialized.responsible) {
-        console.log("Responsable déjà initialisé");
-        return;
-    }
-    
-    console.log("Initialisation des fonctionnalités responsable...");
-    
-    setupResponsiblePettyCash();
-    setupResponsibleReports();
-    setupResponsibleView();
-    
-    state.modulesInitialized.responsible = true;
-    console.log("Fonctionnalités responsables initialisées");
-};
 
-// ==================== GESTION PETITE CAISSE RESPONSABLE ====================
-// Version responsable sans doublon avec admin.js
-function setupResponsiblePettyCash() {
-    // Préfixer toutes les fonctions avec "responsible" pour éviter les conflits
-    addResponsiblePettyCashTab();
-    
-    // Utiliser delegation d'événements pour éviter les conflits
-    document.removeEventListener('click', handleResponsiblePettyCashClick);
-    document.addEventListener('click', handleResponsiblePettyCashClick);
+    console.log('Initialisation du module Responsable');
+
+    // 1. Masquer / désactiver les éléments interdits pour le responsable
+    disableForbiddenElements();
+
+    // 2. Attacher nos propres écouteurs d'événements
+    attachResponsibleEventListeners();
+
+    // 3. Mettre à jour l'affichage (statistiques, caisses)
+    respUpdateAdminDisplay();
 }
 
-function handleResponsiblePettyCashClick(e) {
-    if (e.target && e.target.id === 'responsible-request-extraction-btn') {
-        window.requestResponsibleExtraction();
+// --------------------------------------
+// Désactivation des actions non autorisées
+// --------------------------------------
+function disableForbiddenElements() {
+    // Masquer les boutons de modification/suppression de transaction
+    const editBtn = document.getElementById('edit-transaction-btn');
+    const deleteBtn = document.getElementById('delete-transaction-btn');
+    const adjustBtn = document.getElementById('adjust-cashier-balance');
+    if (editBtn) editBtn.style.display = 'none';
+    if (deleteBtn) deleteBtn.style.display = 'none';
+    if (adjustBtn) adjustBtn.style.display = 'none';
+
+    // Désactiver les champs de modification de transaction dans l'historique
+    // (sera géré dynamiquement dans respSearchPatient)
+
+    // Remplacer le bouton de transfert standard par notre version avec motif
+    const oldTransferBtn = document.getElementById('transfer-petty-cash');
+    if (oldTransferBtn) {
+        oldTransferBtn.style.display = 'none';
+        // Ajouter notre interface de retrait motifé
+        addPettyCashWithdrawUI();
     }
-    if (e.target && e.target.id === 'responsible-view-extraction-history-btn') {
-        window.viewResponsibleExtractionHistory();
-    }
-    if (e.target && e.target.id === 'responsible-cancel-extraction-btn') {
-        const extractionId = e.target.dataset.id;
-        window.cancelResponsibleExtractionRequest(extractionId);
-    }
+
+    // Désactiver toute édition de transaction via les fonctions globales
+    window.selectTransactionForEdit = function() {
+        alert("Vous n'avez pas la permission de modifier les transactions.");
+    };
 }
 
-function addResponsiblePettyCashTab() {
-    const adminSection = document.getElementById('administration');
-    if (!adminSection) return;
-    
-    // Vérifier si l'onglet responsable existe déjà
-    if (document.getElementById('responsible-petty-cash')) return;
-    
-    const navTabs = document.querySelector('.nav-tabs');
-    const pettyCashTab = document.createElement('div');
-    pettyCashTab.className = 'nav-tab';
-    pettyCashTab.dataset.target = 'responsiblePettyCash';
-    pettyCashTab.innerHTML = '<i class="fas fa-wallet"></i> Petite Caisse';
-    navTabs.appendChild(pettyCashTab);
-    
-    const pettyCashContent = document.createElement('section');
-    pettyCashContent.id = 'responsiblePettyCash';
-    pettyCashContent.className = 'content';
-    pettyCashContent.innerHTML = generateResponsiblePettyCashContent();
-    adminSection.parentNode.insertBefore(pettyCashContent, adminSection.nextSibling);
-    
-    pettyCashTab.addEventListener('click', () => {
-        document.querySelectorAll('.nav-tab').forEach(tab => tab.classList.remove('active'));
-        document.querySelectorAll('.content').forEach(content => content.classList.remove('active'));
-        
-        pettyCashTab.classList.add('active');
-        pettyCashContent.classList.add('active');
-        
-        window.loadResponsiblePettyCashData();
-    });
-}
-
-function generateResponsiblePettyCashContent() {
-    return `
-        <h2 class="section-title"><i class="fas fa-wallet"></i> Gestion de la Petite Caisse - Responsable</h2>
-        
-        <div class="petty-cash-balance-card">
-            <h3>Solde Actuel de la Petite Caisse</h3>
-            <h2 id="responsible-petty-cash-balance">${state.pettyCash.toLocaleString()} Gdes</h2>
-            <p>Disponible pour les dépenses courantes</p>
-        </div>
-        
-        <div class="card mt-3">
-            <h3><i class="fas fa-hand-holding-usd"></i> Extraction Directe</h3>
-            <div class="responsible-petty-cash-extraction">
-                <div class="form-group">
-                    <label class="form-label">Montant à extraire (Gdes) *</label>
-                    <input type="number" id="responsible-extraction-amount" class="form-control" 
-                           placeholder="Montant en gourdes" min="1" max="${state.pettyCash}">
-                    <small class="text-muted">Solde disponible: ${state.pettyCash.toLocaleString()} Gdes</small>
-                </div>
-                
-                <div class="form-group">
-                    <label class="form-label">Raison de l'extraction *</label>
-                    <select id="responsible-extraction-reason" class="form-control">
-                        <option value="">Sélectionner une raison</option>
-                        <option value="fournitures">Achat fournitures bureau</option>
-                        <option value="entretien">Entretien et réparations</option>
-                        <option value="courses">Courses quotidiennes</option>
-                        <option value="transport">Frais de transport</option>
-                        <option value="urgences">Dépenses urgentes</option>
-                        <option value="autre">Autre</option>
-                    </select>
-                </div>
-                
-                <div class="form-group">
-                    <label class="form-label">Description détaillée *</label>
-                    <textarea id="responsible-extraction-description" class="form-control" rows="3" 
-                              placeholder="Décrivez en détail la raison de cette extraction..."></textarea>
-                </div>
-                
-                <div class="form-group">
-                    <label class="form-label">Justificatif (optionnel)</label>
-                    <input type="text" id="responsible-extraction-justification" class="form-control" 
-                           placeholder="Numéro de facture, nom du fournisseur, etc.">
-                </div>
-                
-                <div class="d-flex" style="gap:15px; margin-top:20px;">
-                    <button id="responsible-request-extraction-btn" class="btn btn-success">
-                        <i class="fas fa-paper-plane"></i> Extraire immédiatement
-                    </button>
-                    <button id="responsible-view-extraction-history-btn" class="btn btn-info">
-                        <i class="fas fa-history"></i> Voir mon historique
-                    </button>
-                </div>
-            </div>
-        </div>
-        
-        <div class="card mt-3">
-            <h3><i class="fas fa-check-circle"></i> Mes Extractions Récentes</h3>
-            <div id="responsible-my-extractions-list"></div>
-        </div>
-        
-        <div class="card mt-3">
-            <h3><i class="fas fa-chart-line"></i> Statistiques des Extractions</h3>
-            <div class="report-summary-simple">
-                <div class="d-flex justify-between">
-                    <div>
-                        <p class="summary-label">Total extrait ce mois</p>
-                        <p class="summary-value" id="responsible-monthly-extraction-total">0 Gdes</p>
-                    </div>
-                    <div>
-                        <p class="summary-label">Nombre d'extractions</p>
-                        <p class="summary-value" id="responsible-monthly-extraction-count">0</p>
-                    </div>
-                    <div>
-                        <p class="summary-label">Dernière extraction</p>
-                        <p class="summary-value" id="responsible-last-extraction-date">-</p>
-                    </div>
-                </div>
-            </div>
-        </div>
-    `;
-}
-
-// ==================== FONCTIONS RESPONSABLE PETITE CAISSE ====================
-window.loadResponsiblePettyCashData = function() {
-    updateResponsibleBalanceDisplay();
-    updateResponsibleMyExtractionsList();
-    updateResponsibleStatistics();
-};
-
-function updateResponsibleBalanceDisplay() {
-    const balanceElement = document.getElementById('responsible-petty-cash-balance');
-    if (balanceElement) {
-        balanceElement.textContent = state.pettyCash.toLocaleString() + ' Gdes';
-    }
-    
-    const amountInput = document.getElementById('responsible-extraction-amount');
-    if (amountInput) {
-        amountInput.max = state.pettyCash;
-    }
-}
-
-function updateResponsibleMyExtractionsList() {
-    const container = document.getElementById('responsible-my-extractions-list');
+// --------------------------------------
+// Interface de retrait petite caisse avec motifs
+// --------------------------------------
+function addPettyCashWithdrawUI() {
+    const container = document.querySelector('#petty-cash-amount')?.closest('.d-flex');
     if (!container) return;
-    
-    const myExtractions = state.pettyCashTransactions
-        .filter(t => t.requestedBy === state.currentUser.username)
-        .sort((a, b) => new Date(b.date + ' ' + b.time) - new Date(a.date + ' ' + a.time))
-        .slice(0, 10);
-    
-    if (myExtractions.length === 0) {
-        container.innerHTML = '<p class="text-muted">Aucune extraction effectuée.</p>';
-        return;
-    }
-    
-    let html = '<div class="table-container"><table class="simplified-table">';
-    html += '<thead><tr><th>Date</th><th>Montant</th><th>Raison</th><th>Statut</th><th>Actions</th></tr></thead><tbody>';
-    
-    myExtractions.forEach(extraction => {
-        const isPending = extraction.status === 'pending' || extraction.status === 'requested';
-        
-        html += `
-            <tr>
-                <td>${extraction.date} ${extraction.time}</td>
-                <td>${extraction.amount} Gdes</td>
-                <td>${extraction.reason}</td>
-                <td>
-                    <span class="extraction-status status-${extraction.status}">
-                        ${extraction.status === 'approved' ? 'Approuvé' : 
-                          extraction.status === 'completed' ? 'Complété' :
-                          extraction.status === 'rejected' ? 'Rejeté' : 'En attente'}
-                    </span>
-                </td>
-                <td>
-                    ${isPending ? `
-                        <button class="btn btn-sm btn-warning" 
-                                id="responsible-cancel-extraction-btn" 
-                                data-id="${extraction.id}">
-                            <i class="fas fa-times"></i> Annuler
-                        </button>
-                    ` : ''}
-                    <button class="btn btn-sm btn-info" 
-                            onclick="window.viewResponsibleExtractionDetails('${extraction.id}')">
-                        <i class="fas fa-info-circle"></i>
-                    </button>
-                </td>
-            </tr>
-        `;
+
+    // Créer le sélecteur de motif
+    const reasonSelect = document.createElement('select');
+    reasonSelect.id = 'resp-petty-cash-reason';
+    reasonSelect.className = 'form-control';
+    reasonSelect.style.width = '200px';
+    reasonSelect.innerHTML = `
+        <option value="">-- Motif du retrait --</option>
+        <option value="fournitures">Achat fournitures de bureau</option>
+        <option value="transport">Transport / Carburant</option>
+        <option value="reparation">Réparation matériel</option>
+        <option value="nourriture">Nourriture / Collations</option>
+        <option value="menues">Menues dépenses</option>
+        <option value="autre">Autre (préciser)</option>
+    `;
+
+    // Champ pour "autre" motif
+    const otherReasonInput = document.createElement('input');
+    otherReasonInput.type = 'text';
+    otherReasonInput.id = 'resp-petty-cash-other';
+    otherReasonInput.className = 'form-control';
+    otherReasonInput.style.width = '200px';
+    otherReasonInput.placeholder = 'Précisez le motif...';
+    otherReasonInput.style.display = 'none';
+
+    // Nouveau bouton de validation
+    const withdrawBtn = document.createElement('button');
+    withdrawBtn.id = 'resp-withdraw-petty-cash';
+    withdrawBtn.className = 'btn btn-warning';
+    withdrawBtn.innerHTML = '<i class="fas fa-hand-holding-usd"></i> Effectuer retrait';
+
+    // Insérer les éléments
+    container.appendChild(reasonSelect);
+    container.appendChild(otherReasonInput);
+    container.appendChild(withdrawBtn);
+
+    // Afficher le champ "autre" si l'option correspondante est choisie
+    reasonSelect.addEventListener('change', function() {
+        otherReasonInput.style.display = this.value === 'autre' ? 'block' : 'none';
     });
-    
-    html += '</tbody></table></div>';
-    container.innerHTML = html;
+
+    // Écouteur du bouton de retrait
+    withdrawBtn.addEventListener('click', respWithdrawFromPettyCash);
 }
 
-function updateResponsibleStatistics() {
-    const now = new Date();
-    const currentMonth = now.getMonth() + 1;
-    const currentYear = now.getFullYear();
-    
-    const myExtractions = state.pettyCashTransactions.filter(t => 
-        t.requestedBy === state.currentUser.username
-    );
-    
-    const monthlyExtractions = myExtractions.filter(t => {
-        const [year, month] = t.date.split('-');
-        return parseInt(year) === currentYear && parseInt(month) === currentMonth;
-    });
-    
-    const monthlyTotal = monthlyExtractions.reduce((sum, t) => sum + t.amount, 0);
-    const monthlyCount = monthlyExtractions.length;
-    
-    const lastExtraction = myExtractions
-        .sort((a, b) => new Date(b.date + ' ' + b.time) - new Date(a.date + ' ' + a.time))[0];
-    
-    document.getElementById('responsible-monthly-extraction-total').textContent = 
-        monthlyTotal.toLocaleString() + ' Gdes';
-    document.getElementById('responsible-monthly-extraction-count').textContent = 
-        monthlyCount;
-    document.getElementById('responsible-last-extraction-date').textContent = 
-        lastExtraction ? `${lastExtraction.date} ${lastExtraction.amount} Gdes` : '-';
+// --------------------------------------
+// Écouteurs propres au responsable
+// --------------------------------------
+function attachResponsibleEventListeners() {
+    // Recherche patient
+    const searchBtn = document.getElementById('search-admin-patient');
+    if (searchBtn) {
+        // Remplacer l'ancien écouteur par le nôtre
+        searchBtn.removeEventListener('click', searchAdminPatient);
+        searchBtn.addEventListener('click', respSearchPatient);
+    }
+
+    // Sauvegarde des privilèges
+    const savePrivBtn = document.getElementById('save-privilege');
+    if (savePrivBtn) {
+        savePrivBtn.removeEventListener('click', savePrivilege);
+        savePrivBtn.addEventListener('click', respSavePrivilege);
+    }
+
+    // Changement du type de privilège (réutilisation de la même fonction car purement UI)
+    const privilegeSelect = document.getElementById('privilege-type');
+    if (privilegeSelect) {
+        privilegeSelect.removeEventListener('change', privilegeSelect.change); // retirer ancien
+        privilegeSelect.addEventListener('change', function() {
+            const discountSection = document.getElementById('discount-section');
+            const creditSection = document.getElementById('credit-section');
+            if (this.value === 'sponsored') {
+                discountSection.classList.remove('hidden');
+                creditSection.classList.add('hidden');
+            } else if (this.value === 'credit') {
+                discountSection.classList.add('hidden');
+                creditSection.classList.remove('hidden');
+            } else {
+                discountSection.classList.add('hidden');
+                creditSection.classList.add('hidden');
+            }
+        });
+    }
+
+    // Gestion des crédits
+    const addCreditBtn = document.getElementById('add-credit-btn');
+    if (addCreditBtn) {
+        addCreditBtn.removeEventListener('click', addPatientCredit);
+        addCreditBtn.addEventListener('click', respAddPatientCredit);
+    }
+
+    const viewCreditHistoryBtn = document.getElementById('view-credit-history');
+    if (viewCreditHistoryBtn) {
+        viewCreditHistoryBtn.removeEventListener('click', viewCreditHistory);
+        viewCreditHistoryBtn.addEventListener('click', respViewCreditHistory);
+    }
+
+    // Rapports
+    const generateReportBtn = document.getElementById('generate-report-btn');
+    if (generateReportBtn) {
+        generateReportBtn.removeEventListener('click', generateReport);
+        generateReportBtn.addEventListener('click', respGenerateReport);
+    }
+
+    const generateUserReportBtn = document.getElementById('generate-user-report-btn');
+    if (generateUserReportBtn) {
+        generateUserReportBtn.removeEventListener('click', generateUserReport);
+        generateUserReportBtn.addEventListener('click', respGenerateUserReport);
+    }
+
+    const exportCsvBtn = document.getElementById('export-report-csv');
+    if (exportCsvBtn) {
+        exportCsvBtn.removeEventListener('click', exportReportToCSV);
+        exportCsvBtn.addEventListener('click', respExportReportToCSV);
+    }
+
+    // Soldes caissiers (lecture seule)
+    const viewBalancesBtn = document.getElementById('view-cashier-balances');
+    if (viewBalancesBtn) {
+        viewBalancesBtn.removeEventListener('click', viewCashierBalances);
+        viewBalancesBtn.addEventListener('click', respViewCashierBalances);
+    }
+
+    // Désactiver complètement la modification utilisateur
+    const editUserBtn = document.querySelector('#users-list .btn-warning');
+    if (editUserBtn) editUserBtn.style.display = 'none'; // sera géré dans updateUsersList si besoin
 }
 
-// Demande d'extraction pour responsable (auto-approuvée)
-window.requestResponsibleExtraction = function() {
-    const amount = parseFloat(document.getElementById('responsible-extraction-amount').value);
-    const reason = document.getElementById('responsible-extraction-reason').value;
-    const description = document.getElementById('responsible-extraction-description').value.trim();
-    const justification = document.getElementById('responsible-extraction-justification').value.trim();
-    
-    if (!amount || amount <= 0 || amount > state.pettyCash) {
-        alert("Montant invalide! Vérifiez le montant et le solde disponible.");
-        return;
-    }
-    
-    if (!reason || !description) {
-        alert("Veuillez remplir tous les champs obligatoires!");
-        return;
-    }
-    
-    if (confirm(`Extraire ${amount} Gdes de la petite caisse pour: ${reason}?`)) {
-        const extraction = {
-            id: 'PETTY-RESP-' + Date.now(),
-            date: new Date().toISOString().split('T')[0],
-            time: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
-            amount: amount,
-            type: 'extraction',
-            reason: reason,
-            description: description,
-            justification: justification,
-            requestedBy: state.currentUser.username,
-            approvedBy: state.currentUser.username,
-            status: 'approved',
-            notes: 'Extraction directe responsable',
-            source: 'responsible' // Marqueur pour identifier la source
-        };
-        
-        state.pettyCashTransactions.push(extraction);
-        state.pettyCash -= amount;
-        
-        const activity = {
-            id: 'ACT' + Date.now(),
-            action: 'responsible_extraction',
-            user: state.currentUser.username,
-            timestamp: new Date().toISOString(),
-            details: `Extraction responsable: ${amount} Gdes - ${reason}`
-        };
-        state.reports.push(activity);
-        
-        saveStateToLocalStorage();
-        alert(`Extraction de ${amount} Gdes effectuée avec succès!`);
-        
-        // Réinitialiser le formulaire
-        document.getElementById('responsible-extraction-amount').value = '';
-        document.getElementById('responsible-extraction-reason').selectedIndex = 0;
-        document.getElementById('responsible-extraction-description').value = '';
-        document.getElementById('responsible-extraction-justification').value = '';
-        
-        window.loadResponsiblePettyCashData();
-    }
-};
+// ==================== FONCTIONS RESPONSABLE ====================
 
-window.viewResponsibleExtractionHistory = function() {
+// Rechercher un patient (historique sans boutons d'action)
+function respSearchPatient() {
+    const patientId = document.getElementById('admin-patient-search').value.trim();
+    const patient = state.patients.find(p => p.id === patientId);
+
+    if (!patient) {
+        alert("Patient non trouvé !");
+        document.getElementById('admin-patient-details').classList.add('hidden');
+        return;
+    }
+
+    // Vérifier expiration des privilèges (identique à admin)
+    if (patient.privilegeGrantedDate) {
+        const now = new Date();
+        const privilegeDate = new Date(patient.privilegeGrantedDate);
+        const hoursDiff = (now - privilegeDate) / (1000 * 60 * 60);
+        if (hoursDiff >= 24) {
+            patient.vip = false;
+            patient.sponsored = false;
+            patient.discountPercentage = 0;
+            patient.hasCreditPrivilege = false;
+            patient.creditLimit = 0;
+            patient.creditUsed = 0;
+            patient.privilegeGrantedDate = null;
+        }
+    }
+
+    // Afficher les infos patient
+    document.getElementById('admin-patient-name').textContent = patient.fullName + ' (' + patient.id + ')';
+    document.getElementById('admin-patient-details').classList.remove('hidden');
+
+    // Mise à jour du selecteur de privilège (identique admin)
+    const privilegeSelect = document.getElementById('privilege-type');
+    const discountSection = document.getElementById('discount-section');
+    const discountInput = document.getElementById('discount-percentage');
+    const creditSection = document.getElementById('credit-section');
+    const creditAmountInput = document.getElementById('credit-amount-input');
+
+    if (patient.vip) {
+        privilegeSelect.value = 'vip';
+        discountSection.classList.add('hidden');
+        creditSection.classList.add('hidden');
+    } else if (patient.sponsored) {
+        privilegeSelect.value = 'sponsored';
+        discountSection.classList.remove('hidden');
+        discountInput.value = patient.discountPercentage || 0;
+        creditSection.classList.add('hidden');
+    } else if (patient.hasCreditPrivilege) {
+        privilegeSelect.value = 'credit';
+        discountSection.classList.add('hidden');
+        creditSection.classList.remove('hidden');
+        if (creditAmountInput) creditAmountInput.value = patient.creditLimit || 0;
+    } else {
+        privilegeSelect.value = 'none';
+        discountSection.classList.add('hidden');
+        creditSection.classList.add('hidden');
+    }
+
+    // Historique des transactions – version SANS boutons d'action
+    const history = state.transactions.filter(t => t.patientId === patient.id);
+    let html = '<table class="table-container"><thead><tr><th>Date</th><th>Service</th><th>Montant</th><th>Statut</th><th>Type</th></tr></thead><tbody>';
+    if (history.length === 0) {
+        html += '<tr><td colspan="5" class="text-center">Aucune transaction</td></tr>';
+    } else {
+        history.forEach(t => {
+            const amountUSD = t.amount / state.exchangeRate;
+            html += `<tr>
+                <td>${t.date}</td>
+                <td>${t.service}</td>
+                <td>${t.amount} Gdes (${amountUSD.toFixed(2)} $)</td>
+                <td>${t.status}</td>
+                <td>${t.type}</td>
+            </tr>`;
+        });
+    }
+    html += '</tbody></table>';
+    document.getElementById('admin-patient-history').innerHTML = html;
+
+    // Afficher les informations de crédit
+    respUpdateCreditDisplay(patientId);
+}
+
+// Sauvegarder les privilèges (identique à admin, sauf que le responsable ne peut pas appliquer de réduction aux transactions existantes ? 
+// On garde la même logique métier, mais on retire l'application automatique sur les transactions impayées pour rester cohérent avec le rôle restrictif)
+function respSavePrivilege() {
+    const patientId = document.getElementById('admin-patient-search').value.trim();
+    const patient = state.patients.find(p => p.id === patientId);
+    if (!patient) return;
+
+    const privilegeType = document.getElementById('privilege-type').value;
+    const discountPercentage = parseInt(document.getElementById('discount-percentage').value) || 0;
+    const creditAmount = parseFloat(document.getElementById('credit-amount-input').value) || 0;
+
+    // Réinitialiser tous les privilèges
+    patient.vip = false;
+    patient.sponsored = false;
+    patient.discountPercentage = 0;
+    patient.hasCreditPrivilege = false;
+    patient.creditLimit = 0;
+    patient.creditUsed = 0;
+    patient.privilegeGrantedDate = null;
+
+    if (privilegeType === 'vip') {
+        patient.vip = true;
+        patient.privilegeGrantedDate = new Date().toISOString();
+        // Le responsable ne modifie PAS les transactions existantes
+        alert("Patient marqué comme VIP (les prochains services seront gratuits)");
+    } else if (privilegeType === 'sponsored') {
+        patient.sponsored = true;
+        patient.discountPercentage = discountPercentage;
+        patient.privilegeGrantedDate = new Date().toISOString();
+        // Ne pas appliquer la réduction aux transactions en cours
+        alert(`Patient marqué comme sponsorisé avec ${discountPercentage}% de réduction (applicable aux futures transactions)`);
+    } else if (privilegeType === 'credit') {
+        patient.hasCreditPrivilege = true;
+        patient.creditLimit = creditAmount;
+        patient.creditUsed = 0;
+        patient.privilegeGrantedDate = new Date().toISOString();
+
+        if (!state.creditAccounts[patientId]) {
+            state.creditAccounts[patientId] = {
+                balance: 0,
+                limit: creditAmount,
+                used: 0,
+                available: creditAmount,
+                history: []
+            };
+        } else {
+            state.creditAccounts[patientId].limit = creditAmount;
+            state.creditAccounts[patientId].available = creditAmount - state.creditAccounts[patientId].used;
+        }
+        alert(`Patient a reçu un privilège crédit de ${creditAmount} Gdes`);
+    } else {
+        alert("Privilèges retirés du patient");
+    }
+
+    // Rafraîchir l'affichage
+    respSearchPatient();
+}
+
+// Ajouter du crédit à un patient (sans modification des transactions)
+function respAddPatientCredit() {
+    const patientId = document.getElementById('admin-patient-search').value.trim();
+    const creditAmount = parseFloat(document.getElementById('credit-amount').value);
+    const creditNote = document.getElementById('credit-note').value;
+
+    if (!patientId || !creditAmount || creditAmount <= 0) {
+        alert("Veuillez saisir un ID patient et un montant valide !");
+        return;
+    }
+
+    const patient = state.patients.find(p => p.id === patientId);
+    if (!patient) {
+        alert("Patient non trouvé !");
+        return;
+    }
+
+    if (!patient.hasCreditPrivilege) {
+        alert("Le patient n'a pas le privilège crédit !");
+        return;
+    }
+
+    patient.creditLimit = (patient.creditLimit || 0) + creditAmount;
+
+    if (!state.creditAccounts[patientId]) {
+        state.creditAccounts[patientId] = {
+            balance: 0,
+            limit: patient.creditLimit,
+            used: patient.creditUsed || 0,
+            available: patient.creditLimit - (patient.creditUsed || 0),
+            history: []
+        };
+    } else {
+        state.creditAccounts[patientId].limit += creditAmount;
+        state.creditAccounts[patientId].available = state.creditAccounts[patientId].limit - state.creditAccounts[patientId].used;
+    }
+
+    // Historique
+    state.creditAccounts[patientId].history.push({
+        date: new Date().toISOString().split('T')[0],
+        time: new Date().toLocaleTimeString('fr-FR'),
+        amount: creditAmount,
+        type: 'credit_augmentation',
+        by: state.currentUser.username,
+        note: creditNote || 'Crédit ajouté manuellement'
+    });
+
+    alert(`Crédit de ${creditAmount} Gdes ajouté au patient ${patient.fullName}. Nouvelle limite: ${patient.creditLimit} Gdes`);
+
+    document.getElementById('credit-amount').value = '';
+    document.getElementById('credit-note').value = '';
+
+    respSearchPatient();
+    respUpdateCreditDisplay(patientId);
+}
+
+// Afficher l'historique des crédits (réutilisation de la fonction admin en changeant le nom)
+function respViewCreditHistory(patientId = null) {
+    if (!patientId) {
+        patientId = document.getElementById('admin-patient-search').value.trim();
+    }
+    const creditAccount = state.creditAccounts[patientId];
+    if (!creditAccount) {
+        alert("Aucun compte crédit pour ce patient !");
+        return;
+    }
+
+    // Même modal que dans admin.js, mais on peut copier le code ou appeler une fonction générique
     const modal = document.createElement('div');
     modal.className = 'transaction-details-modal';
-    
-    const myExtractions = state.pettyCashTransactions
-        .filter(t => t.requestedBy === state.currentUser.username)
-        .sort((a, b) => new Date(b.date + ' ' + b.time) - new Date(a.date + ' ' + a.time));
-    
-    let html = `
+    modal.innerHTML = `
         <div class="transaction-details-content">
-            <h3>Historique complet de vos Extractions</h3>
+            <h3>Historique des crédits - ${patientId}</h3>
+            <div class="credit-summary">
+                <p><strong>Limite de crédit:</strong> ${creditAccount.limit} Gdes</p>
+                <p><strong>Crédit utilisé:</strong> ${creditAccount.used} Gdes</p>
+                <p><strong>Crédit disponible:</strong> ${creditAccount.available} Gdes</p>
+            </div>
             <div class="table-container">
                 <table>
                     <thead>
                         <tr>
-                            <th>Date</th>
+                            <th>Date/Heure</th>
                             <th>Montant</th>
-                            <th>Raison</th>
-                            <th>Description</th>
-                            <th>Statut</th>
+                            <th>Type</th>
+                            <th>Par</th>
+                            <th>Note</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${creditAccount.history.map(record => `
+                            <tr>
+                                <td>${record.date} ${record.time}</td>
+                                <td>${record.amount > 0 ? '+' : ''}${record.amount} Gdes</td>
+                                <td>${record.type}</td>
+                                <td>${record.by}</td>
+                                <td>${record.note || ''}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+            <button class="btn btn-secondary mt-3" onclick="this.closest('.transaction-details-modal').remove()">Fermer</button>
+        </div>
+    `;
+    document.body.appendChild(modal);
+}
+
+// Retrait de la petite caisse avec motif obligatoire
+function respWithdrawFromPettyCash() {
+    const amount = parseFloat(document.getElementById('petty-cash-amount').value);
+    const reasonSelect = document.getElementById('resp-petty-cash-reason');
+    const otherInput = document.getElementById('resp-petty-cash-other');
+    let reason = reasonSelect.value;
+
+    if (!reason) {
+        alert("Veuillez sélectionner un motif de retrait !");
+        return;
+    }
+    if (reason === 'autre' && !otherInput.value.trim()) {
+        alert("Veuillez préciser le motif du retrait.");
+        return;
+    }
+    if (reason === 'autre') {
+        reason = otherInput.value.trim();
+    }
+
+    if (!amount || amount <= 0) {
+        alert("Veuillez saisir un montant valide !");
+        return;
+    }
+    if (amount > state.pettyCash) {
+        alert("Fonds insuffisants dans la petite caisse !");
+        return;
+    }
+
+    if (confirm(`Retirer ${amount} Gdes de la petite caisse pour le motif : "${reason}" ?`)) {
+        state.pettyCash -= amount;
+
+        // Enregistrer la dépense
+        const expenseRecord = {
+            id: 'EXP' + Date.now(),
+            date: new Date().toISOString().split('T')[0],
+            time: new Date().toLocaleTimeString('fr-FR'),
+            amount: -amount,
+            reason: reason,
+            by: state.currentUser.username,
+            type: 'petty_cash_withdrawal'
+        };
+
+        if (!state.reports) state.reports = [];
+        state.reports.push(expenseRecord);
+
+        alert(`Retrait de ${amount} Gdes effectué avec succès. Motif: ${reason}`);
+
+        document.getElementById('petty-cash-amount').value = '';
+        reasonSelect.value = '';
+        otherInput.value = '';
+        otherInput.style.display = 'none';
+
+        respUpdateAdminDisplay();
+    }
+}
+
+// Voir les soldes des caissiers (lecture seule – sans bouton d'ajustement)
+function respViewCashierBalances() {
+    const modal = document.createElement('div');
+    modal.className = 'transaction-details-modal';
+    let html = `
+        <div class="transaction-details-content">
+            <h3>Soldes des Caissiers</h3>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Caissier</th>
+                            <th>Nom</th>
+                            <th>Solde actuel</th>
+                            <th>Transactions</th>
                         </tr>
                     </thead>
                     <tbody>
     `;
-    
-    if (myExtractions.length === 0) {
-        html += '<tr><td colspan="5" class="text-center">Aucune extraction</td></tr>';
-    } else {
-        myExtractions.forEach(extraction => {
-            html += `
-                <tr>
-                    <td>${extraction.date} ${extraction.time}</td>
-                    <td>${extraction.amount} Gdes</td>
-                    <td>${extraction.reason}</td>
-                    <td>${extraction.description || '-'}</td>
-                    <td><span class="extraction-status status-${extraction.status}">${
-                        extraction.status === 'approved' ? 'Approuvé' : 
-                        extraction.status === 'completed' ? 'Complété' :
-                        extraction.status === 'rejected' ? 'Rejeté' : 'En attente'
-                    }</span></td>
-                </tr>
-            `;
-        });
+
+    for (const [username, data] of Object.entries(state.cashierBalances || {})) {
+        const user = state.users.find(u => u.username === username);
+        const transactionCount = data.transactions ? data.transactions.length : 0;
+        html += `
+            <tr>
+                <td>${username}</td>
+                <td>${user ? user.name : 'Non trouvé'}</td>
+                <td>${data.balance.toLocaleString()} Gdes</td>
+                <td>${transactionCount}</td>
+            </tr>
+        `;
     }
-    
+
     html += `
                     </tbody>
                 </table>
             </div>
             <div class="mt-3">
-                <button class="btn btn-secondary" onclick="this.closest('.transaction-details-modal').remove()">
-                    Fermer
-                </button>
-                <button class="btn btn-primary" onclick="window.printResponsibleExtractionHistory()">
-                    <i class="fas fa-print"></i> Imprimer
-                </button>
+                <button class="btn btn-secondary" onclick="this.closest('.transaction-details-modal').remove()">Fermer</button>
             </div>
         </div>
     `;
-    
+
     modal.innerHTML = html;
     document.body.appendChild(modal);
-};
+}
 
-window.cancelResponsibleExtractionRequest = function(extractionId) {
-    const extraction = state.pettyCashTransactions.find(t => t.id === extractionId);
-    if (!extraction) return;
-    
-    if (extraction.requestedBy !== state.currentUser.username) {
-        alert("Vous ne pouvez annuler que vos propres demandes!");
-        return;
-    }
-    
-    if (extraction.status !== 'pending' && extraction.status !== 'requested') {
-        alert("Cette extraction ne peut plus être annulée!");
-        return;
-    }
-    
-    if (confirm("Annuler cette demande d'extraction?")) {
-        extraction.status = 'cancelled';
-        extraction.cancelledBy = state.currentUser.username;
-        extraction.cancellationDate = new Date().toISOString().split('T')[0];
-        
-        saveStateToLocalStorage();
-        alert("Demande annulée!");
-        window.loadResponsiblePettyCashData();
-    }
-};
+// Mise à jour de l'affichage du crédit
+function respUpdateCreditDisplay(patientId) {
+    const patient = state.patients.find(p => p.id === patientId);
+    const creditAccount = state.creditAccounts[patientId];
+    const container = document.getElementById('patient-credit-display');
+    if (!container) return;
 
-window.viewResponsibleExtractionDetails = function(extractionId) {
-    const extraction = state.pettyCashTransactions.find(t => t.id === extractionId);
-    if (!extraction) return;
-    
-    const modal = document.createElement('div');
-    modal.className = 'transaction-details-modal';
-    
-    let html = `
-        <div class="transaction-details-content">
-            <h3>Détails de l'Extraction</h3>
-            <div class="card">
-                <p><strong>ID:</strong> ${extraction.id}</p>
-                <p><strong>Date:</strong> ${extraction.date} ${extraction.time}</p>
-                <p><strong>Montant:</strong> ${extraction.amount} Gdes</p>
-                <p><strong>Raison:</strong> ${extraction.reason}</p>
-                <p><strong>Description:</strong> ${extraction.description || 'Non spécifiée'}</p>
-                <p><strong>Justificatif:</strong> ${extraction.justification || 'Aucun'}</p>
-                <p><strong>Demandé par:</strong> ${extraction.requestedBy}</p>
-                <p><strong>Statut:</strong> <span class="extraction-status status-${extraction.status}">${
-                    extraction.status === 'approved' ? 'Approuvé' : 
-                    extraction.status === 'pending' ? 'En attente' :
-                    extraction.status === 'rejected' ? 'Rejeté' : extraction.status
-                }</span></p>
-                ${extraction.approvedBy ? `<p><strong>Approuvé par:</strong> ${extraction.approvedBy}</p>` : ''}
-                ${extraction.notes ? `<p><strong>Notes:</strong> ${extraction.notes}</p>` : ''}
+    if (patient && patient.hasCreditPrivilege && creditAccount) {
+        container.innerHTML = `
+            <div class="credit-info card">
+                <h5>Compte Crédit</h5>
+                <p><strong>Limite de crédit:</strong> ${creditAccount.limit} Gdes</p>
+                <p><strong>Crédit utilisé:</strong> ${creditAccount.used} Gdes</p>
+                <p><strong>Crédit disponible:</strong> ${creditAccount.available} Gdes</p>
+                <div class="mt-2">
+                    <button class="btn btn-info btn-sm" onclick="respViewCreditHistory('${patientId}')">Voir l'historique</button>
+                </div>
             </div>
-            <div class="mt-3">
-                <button class="btn btn-secondary" onclick="this.closest('.transaction-details-modal').remove()">
-                    Fermer
-                </button>
-                <button class="btn btn-primary" onclick="window.printResponsibleExtractionDetails('${extraction.id}')">
-                    <i class="fas fa-print"></i> Imprimer
-                </button>
-            </div>
-        </div>
-    `;
-    
-    modal.innerHTML = html;
-    document.body.appendChild(modal);
-};
-
-window.printResponsibleExtractionHistory = function() {
-    const printWindow = window.open('', '_blank');
-    printWindow.document.write(`
-        <html>
-        <head>
-            <title>Mes Extractions</title>
-            <style>
-                body { font-family: Arial, sans-serif; padding: 20px; }
-                table { border-collapse: collapse; width: 100%; margin: 20px 0; }
-                th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-                th { background-color: #f2f2f2; }
-                .status-approved { color: green; }
-                .status-pending { color: orange; }
-                .status-rejected { color: red; }
-            </style>
-        </head>
-        <body>
-            <h2>Historique des Extractions - ${state.currentUser.name}</h2>
-            <p>Date: ${new Date().toLocaleDateString()}</p>
-            ${document.querySelector('.transaction-details-content .table-container').innerHTML}
-        </body>
-        </html>
-    `);
-    printWindow.document.close();
-    printWindow.print();
-};
-
-window.printResponsibleExtractionDetails = function(extractionId) {
-    const extraction = state.pettyCashTransactions.find(t => t.id === extractionId);
-    if (!extraction) return;
-    
-    const printWindow = window.open('', '_blank');
-    printWindow.document.write(`
-        <html>
-        <head>
-            <title>Extraction ${extractionId}</title>
-            <style>
-                body { font-family: Arial, sans-serif; padding: 20px; }
-                .details { margin: 20px 0; }
-                .details p { margin: 5px 0; }
-            </style>
-        </head>
-        <body>
-            <h2>Justificatif d'Extraction - Responsable</h2>
-            <p><strong>Hôpital:</strong> ${state.hospitalName}</p>
-            <p><strong>Date d'impression:</strong> ${new Date().toLocaleDateString()}</p>
-            <hr>
-            <div class="details">
-                <p><strong>ID Extraction:</strong> ${extraction.id}</p>
-                <p><strong>Date:</strong> ${extraction.date} ${extraction.time}</p>
-                <p><strong>Montant:</strong> ${extraction.amount} Gdes</p>
-                <p><strong>Raison:</strong> ${extraction.reason}</p>
-                <p><strong>Description:</strong> ${extraction.description || 'Non spécifiée'}</p>
-                <p><strong>Demandé par:</strong> ${extraction.requestedBy}</p>
-                <p><strong>Statut:</strong> ${extraction.status}</p>
-            </div>
-            <hr>
-            <div style="margin-top: 50px;">
-                <p>Signature du responsable:</p>
-                <p style="margin-top: 50px;">_________________________</p>
-                <p>${state.currentUser.name}</p>
-            </div>
-        </body>
-        </html>
-    `);
-    printWindow.document.close();
-    printWindow.print();
-};
-
-// Point d'entrée pour afficher la gestion de petite caisse depuis le tableau de bord
-window.showResponsiblePettyCashManagement = function() {
-    const pettyCashTab = document.querySelector('.nav-tab[data-target="responsiblePettyCash"]');
-    if (pettyCashTab) {
-        pettyCashTab.click();
+        `;
+        container.classList.remove('hidden');
     } else {
-        addResponsiblePettyCashTab();
-        setTimeout(() => {
-            document.querySelector('.nav-tab[data-target="responsiblePettyCash"]')?.click();
-        }, 100);
+        container.innerHTML = '<p>Aucun compte crédit disponible</p>';
+        container.classList.remove('hidden');
     }
+}
+
+// Générer un rapport – réutilisation des fonctions existantes mais encapsulées
+function respGenerateReport() {
+    // On appelle directement generateReport() car elle ne modifie pas l'état, seulement affiche
+    // Mais pour éviter toute confusion, on peut créer une copie allégée
+    if (typeof generateReport === 'function') {
+        generateReport();
+    } else {
+        alert("Fonction de rapport non disponible");
+    }
+}
+
+function respGenerateUserReport() {
+    if (typeof generateUserReport === 'function') {
+        generateUserReport();
+    } else {
+        alert("Fonction de rapport utilisateur non disponible");
+    }
+}
+
+function respExportReportToCSV() {
+    if (typeof exportReportToCSV === 'function') {
+        exportReportToCSV();
+    } else {
+        alert("Export CSV non disponible");
+    }
+}
+
+// Mettre à jour les affichages administratifs (statistiques, caisses)
+function respUpdateAdminDisplay() {
+    if (typeof updateAdminStats === 'function') updateAdminStats();
+    if (typeof updateCharts === 'function') updateCharts();
+    if (typeof updateAdminExtendedDisplay === 'function') updateAdminExtendedDisplay();
+
+    // Mettre à jour les soldes des caisses
+    const mainCashEl = document.getElementById('main-cash-balance');
+    const pettyCashEl = document.getElementById('petty-cash-balance');
+    if (mainCashEl) mainCashEl.textContent = (state.mainCash || 0).toLocaleString() + ' Gdes';
+    if (pettyCashEl) pettyCashEl.textContent = (state.pettyCash || 0).toLocaleString() + ' Gdes';
+}
+
+// Rendre les fonctions accessibles globalement (pour les appels onclick)
+window.respViewCreditHistory = respViewCreditHistory;
+window.respUpdateCreditDisplay = respUpdateCreditDisplay;
+// On surcharge aussi les anciennes fonctions pour éviter les erreurs
+window.searchAdminPatient = respSearchPatient;
+window.savePrivilege = respSavePrivilege;
+window.addPatientCredit = respAddPatientCredit;
+window.viewCreditHistory = respViewCreditHistory;
+window.transferToPettyCash = function() {
+    alert("Opération non autorisée. Utilisez le retrait avec motif.");
 };
-
-// ==================== RAPPORTS SIMPLIFIÉS RESPONSABLE ====================
-function setupResponsibleReports() {
-    if (state.currentRole !== 'responsible') return;
-    modifyResponsibleReportsInterface();
-}
-
-function modifyResponsibleReportsInterface() {
-    setTimeout(() => {
-        const reportsSection = document.getElementById('administration');
-        if (!reportsSection) return;
-        
-        const reportButtons = reportsSection.querySelectorAll('button');
-        reportButtons.forEach(btn => {
-            if (btn.textContent.includes('Exporter') || 
-                btn.textContent.includes('Modifier') || 
-                btn.textContent.includes('Supprimer')) {
-                btn.classList.add('hidden-for-responsible');
-            }
-        });
-        
-        const tables = reportsSection.querySelectorAll('table');
-        tables.forEach(table => {
-            table.classList.add('simplified-table');
-            
-            const headers = table.querySelectorAll('th');
-            headers.forEach((th, index) => {
-                if (th.textContent.includes('Actions') || 
-                    th.textContent.includes('Modifier')) {
-                    const rows = table.querySelectorAll('tr');
-                    rows.forEach(row => {
-                        const cells = row.querySelectorAll('td, th');
-                        if (cells[index]) {
-                            cells[index].style.display = 'none';
-                        }
-                    });
-                }
-            });
-        });
-    }, 1000);
-}
-
-// ==================== VUE DES TRANSACTIONS RESPONSABLE ====================
-function setupResponsibleView() {
-    if (state.currentRole !== 'responsible') return;
-    
-    document.querySelectorAll('#administration .btn-warning, #administration .btn-danger').forEach(btn => {
-        btn.classList.add('hidden-for-responsible');
-    });
-    
-    document.querySelectorAll('#administration input, #administration select, #administration textarea').forEach(input => {
-        if (!input.classList.contains('no-readonly')) {
-            input.disabled = true;
-            input.classList.add('readonly-field');
-        }
-    });
-}
-
-// ==================== TABLEAU DE BORD RESPONSABLE ====================
-window.initResponsibleDashboardEvents = function() {
-    updateRecentTransactionsSimple();
-    updateRecentPettyCashResponsible();
-    
-    // Nettoyer les anciens intervalles
-    if (window.responsibleDashboardInterval) {
-        clearInterval(window.responsibleDashboardInterval);
-    }
-    
-    window.responsibleDashboardInterval = setInterval(() => {
-        updateRecentTransactionsSimple();
-        updateRecentPettyCashResponsible();
-        
-        const actionsContainer = document.getElementById('responsible-actions-list');
-        if (actionsContainer) {
-            actionsContainer.innerHTML = window.generateResponsibleActionsList();
-        }
-    }, 30000);
-};
-
-function updateRecentTransactionsSimple() {
-    const container = document.getElementById('recent-transactions-simple');
-    if (!container) return;
-    
-    const recent = [...state.transactions]
-        .sort((a, b) => new Date(b.date + ' ' + b.time) - new Date(a.date + ' ' + a.time))
-        .slice(0, 10);
-    
-    let html = '';
-    recent.forEach(t => {
-        html += `
-            <tr>
-                <td>${t.time}</td>
-                <td>${t.patientName.substring(0, 20)}${t.patientName.length > 20 ? '...' : ''}</td>
-                <td>${t.service.substring(0, 20)}${t.service.length > 20 ? '...' : ''}</td>
-                <td>${t.amount} Gdes</td>
-                <td><span class="${t.status === 'paid' ? 'status-paid' : 'status-unpaid'}">${t.status === 'paid' ? 'Payé' : 'Non payé'}</span></td>
-            </tr>
-        `;
-    });
-    
-    container.innerHTML = html;
-}
-
-function updateRecentPettyCashResponsible() {
-    const container = document.getElementById('recent-petty-cash-transactions');
-    if (!container) return;
-    
-    const recent = [...state.pettyCashTransactions]
-        .sort((a, b) => new Date(b.date + ' ' + b.time) - new Date(a.date + ' ' + a.time))
-        .slice(0, 5);
-    
-    if (recent.length === 0) {
-        container.innerHTML = '<p class="text-muted">Aucune extraction récente.</p>';
-        return;
-    }
-    
-    let html = '<div class="table-container"><table class="simplified-table">';
-    html += '<thead><tr><th>Date</th><th>Montant</th><th>Raison</th><th>Statut</th></tr></thead><tbody>';
-    
-    recent.forEach(t => {
-        html += `
-            <tr>
-                <td>${t.date} ${t.time}</td>
-                <td>${t.amount} Gdes</td>
-                <td>${t.reason.substring(0, 30)}${t.reason.length > 30 ? '...' : ''}</td>
-                <td><span class="extraction-status status-${t.status}">${
-                    t.status === 'approved' ? 'Approuvé' : 
-                    t.status === 'pending' ? 'En attente' :
-                    t.status === 'rejected' ? 'Rejeté' : 'Complété'
-                }</span></td>
-            </tr>
-        `;
-    });
-    
-    html += '</tbody></table></div>';
-    container.innerHTML = html;
-}
-
-window.generateResponsibleActionsList = function() {
-    let actions = [];
-    
-    const pendingExtractions = state.pettyCashTransactions.filter(t => 
-        t.status === 'pending' && t.requestedBy === state.currentUser.username
-    );
-    
-    if (pendingExtractions.length > 0) {
-        actions.push(`<div class="alert alert-warning">
-            <i class="fas fa-clock"></i> ${pendingExtractions.length} extraction(s) en attente d'approbation
-        </div>`);
-    }
-    
-    if (state.pettyCash < 10000) {
-        actions.push(`<div class="alert alert-danger">
-            <i class="fas fa-exclamation-triangle"></i> Solde de la petite caisse faible: ${state.pettyCash.toLocaleString()} Gdes
-        </div>`);
-    }
-    
-    const largeUnpaid = state.transactions.filter(t => 
-        t.status === 'unpaid' && t.amount > 5000
-    );
-    
-    if (largeUnpaid.length > 0) {
-        actions.push(`<div class="alert alert-info">
-            <i class="fas fa-money-bill-wave"></i> ${largeUnpaid.length} transaction(s) importante(s) non payée(s)
-        </div>`);
-    }
-    
-    if (actions.length === 0) {
-        return '<p class="text-muted">Aucune action requise pour le moment.</p>';
-    }
-    
-    return actions.join('');
+window.adjustCashierBalance = function() {
+    alert("Vous n'avez pas la permission d'ajuster les soldes.");
 };
