@@ -45,7 +45,7 @@ function disableForbiddenElements() {
     const oldTransferBtn = document.getElementById('transfer-petty-cash');
     if (oldTransferBtn) {
         oldTransferBtn.style.display = 'none';
-        // Ajouter notre interface de retrait motifé
+        // Ajouter notre interface de retrait motifé + agent
         addPettyCashWithdrawUI();
     }
 
@@ -53,14 +53,45 @@ function disableForbiddenElements() {
     window.selectTransactionForEdit = function() {
         alert("Vous n'avez pas la permission de modifier les transactions.");
     };
+
+    // --- MODIFICATION : Masquer la grande caisse (main cash) ---
+    const mainCashBalance = document.getElementById('main-cash-balance');
+    if (mainCashBalance) {
+        mainCashBalance.style.display = 'none';
+        // Optionnel : masquer aussi le label parent
+        const parent = mainCashBalance.closest('.d-flex, .card, .balance-item');
+        if (parent) parent.style.display = 'none';
+    }
+
+    // --- MODIFICATION : Masquer les montants des services dans d'éventuels affichages statiques ---
+    // (les montants dans l'historique patient et les rapports sont traités ailleurs)
 }
 
 // --------------------------------------
-// Interface de retrait petite caisse avec motifs
+// Interface de retrait petite caisse avec motifs et choix de l'agent
 // --------------------------------------
 function addPettyCashWithdrawUI() {
     const container = document.querySelector('#petty-cash-amount')?.closest('.d-flex');
     if (!container) return;
+
+    // Créer le sélecteur d'agent (utilisateurs avec rôle caissier)
+    const agentSelect = document.createElement('select');
+    agentSelect.id = 'resp-petty-cash-agent';
+    agentSelect.className = 'form-control';
+    agentSelect.style.width = '200px';
+    agentSelect.innerHTML = '<option value="">-- Agent ayant effectué le retrait --</option>';
+
+    // Peupler la liste des agents (caissiers)
+    if (state.users) {
+        state.users
+            .filter(user => user.role === 'cashier')
+            .forEach(cashier => {
+                const option = document.createElement('option');
+                option.value = cashier.username;
+                option.textContent = `${cashier.name} (${cashier.username})`;
+                agentSelect.appendChild(option);
+            });
+    }
 
     // Créer le sélecteur de motif
     const reasonSelect = document.createElement('select');
@@ -92,7 +123,8 @@ function addPettyCashWithdrawUI() {
     withdrawBtn.className = 'btn btn-warning';
     withdrawBtn.innerHTML = '<i class="fas fa-hand-holding-usd"></i> Effectuer retrait';
 
-    // Insérer les éléments
+    // Insérer les éléments dans l'ordre : agent, motif, autre, bouton
+    container.appendChild(agentSelect);
     container.appendChild(reasonSelect);
     container.appendChild(otherReasonInput);
     container.appendChild(withdrawBtn);
@@ -158,23 +190,23 @@ function attachResponsibleEventListeners() {
         viewCreditHistoryBtn.addEventListener('click', respViewCreditHistory);
     }
 
-    // Rapports
+    // Rapports - on utilise maintenant nos propres fonctions sans montants
     const generateReportBtn = document.getElementById('generate-report-btn');
     if (generateReportBtn) {
         generateReportBtn.removeEventListener('click', generateReport);
-        generateReportBtn.addEventListener('click', respGenerateReport);
+        generateReportBtn.addEventListener('click', respGenerateReportNoAmounts);
     }
 
     const generateUserReportBtn = document.getElementById('generate-user-report-btn');
     if (generateUserReportBtn) {
         generateUserReportBtn.removeEventListener('click', generateUserReport);
-        generateUserReportBtn.addEventListener('click', respGenerateUserReport);
+        generateUserReportBtn.addEventListener('click', respGenerateUserReportNoAmounts);
     }
 
     const exportCsvBtn = document.getElementById('export-report-csv');
     if (exportCsvBtn) {
         exportCsvBtn.removeEventListener('click', exportReportToCSV);
-        exportCsvBtn.addEventListener('click', respExportReportToCSV);
+        exportCsvBtn.addEventListener('click', respExportReportToCSVNoAmounts);
     }
 
     // Soldes caissiers (lecture seule)
@@ -191,7 +223,7 @@ function attachResponsibleEventListeners() {
 
 // ==================== FONCTIONS RESPONSABLE ====================
 
-// Rechercher un patient (historique sans boutons d'action)
+// Rechercher un patient (historique sans boutons d'action et SANS montants)
 function respSearchPatient() {
     const patientId = document.getElementById('admin-patient-search').value.trim();
     const patient = state.patients.find(p => p.id === patientId);
@@ -249,18 +281,17 @@ function respSearchPatient() {
         creditSection.classList.add('hidden');
     }
 
-    // Historique des transactions – version SANS boutons d'action
+    // --- MODIFICATION : Historique des transactions – VERSION SANS MONTANTS ---
     const history = state.transactions.filter(t => t.patientId === patient.id);
-    let html = '<table class="table-container"><thead><tr><th>Date</th><th>Service</th><th>Montant</th><th>Statut</th><th>Type</th></tr></thead><tbody>';
+    // En-tête sans la colonne Montant
+    let html = '<table class="table-container"><thead><tr><th>Date</th><th>Service</th><th>Statut</th><th>Type</th></tr></thead><tbody>';
     if (history.length === 0) {
-        html += '<tr><td colspan="5" class="text-center">Aucune transaction</td></tr>';
+        html += '<tr><td colspan="4" class="text-center">Aucune transaction</td></tr>';
     } else {
         history.forEach(t => {
-            const amountUSD = t.amount / state.exchangeRate;
             html += `<tr>
                 <td>${t.date}</td>
                 <td>${t.service}</td>
-                <td>${t.amount} Gdes (${amountUSD.toFixed(2)} $)</td>
                 <td>${t.status}</td>
                 <td>${t.type}</td>
             </tr>`;
@@ -273,8 +304,7 @@ function respSearchPatient() {
     respUpdateCreditDisplay(patientId);
 }
 
-// Sauvegarder les privilèges (identique à admin, sauf que le responsable ne peut pas appliquer de réduction aux transactions existantes ? 
-// On garde la même logique métier, mais on retire l'application automatique sur les transactions impayées pour rester cohérent avec le rôle restrictif)
+// Sauvegarder les privilèges (identique à admin, mais sans appliquer de réduction aux transactions existantes)
 function respSavePrivilege() {
     const patientId = document.getElementById('admin-patient-search').value.trim();
     const patient = state.patients.find(p => p.id === patientId);
@@ -296,13 +326,11 @@ function respSavePrivilege() {
     if (privilegeType === 'vip') {
         patient.vip = true;
         patient.privilegeGrantedDate = new Date().toISOString();
-        // Le responsable ne modifie PAS les transactions existantes
         alert("Patient marqué comme VIP (les prochains services seront gratuits)");
     } else if (privilegeType === 'sponsored') {
         patient.sponsored = true;
         patient.discountPercentage = discountPercentage;
         patient.privilegeGrantedDate = new Date().toISOString();
-        // Ne pas appliquer la réduction aux transactions en cours
         alert(`Patient marqué comme sponsorisé avec ${discountPercentage}% de réduction (applicable aux futures transactions)`);
     } else if (privilegeType === 'credit') {
         patient.hasCreditPrivilege = true;
@@ -387,7 +415,7 @@ function respAddPatientCredit() {
     respUpdateCreditDisplay(patientId);
 }
 
-// Afficher l'historique des crédits (réutilisation de la fonction admin en changeant le nom)
+// Afficher l'historique des crédits (identique admin)
 function respViewCreditHistory(patientId = null) {
     if (!patientId) {
         patientId = document.getElementById('admin-patient-search').value.trim();
@@ -398,7 +426,6 @@ function respViewCreditHistory(patientId = null) {
         return;
     }
 
-    // Même modal que dans admin.js, mais on peut copier le code ou appeler une fonction générique
     const modal = document.createElement('div');
     modal.className = 'transaction-details-modal';
     modal.innerHTML = `
@@ -439,13 +466,19 @@ function respViewCreditHistory(patientId = null) {
     document.body.appendChild(modal);
 }
 
-// Retrait de la petite caisse avec motif obligatoire
+// Retrait de la petite caisse avec motif obligatoire et agent sélectionné
 function respWithdrawFromPettyCash() {
     const amount = parseFloat(document.getElementById('petty-cash-amount').value);
+    const agentSelect = document.getElementById('resp-petty-cash-agent');
+    const agent = agentSelect.value;
     const reasonSelect = document.getElementById('resp-petty-cash-reason');
     const otherInput = document.getElementById('resp-petty-cash-other');
     let reason = reasonSelect.value;
 
+    if (!agent) {
+        alert("Veuillez sélectionner l'agent qui a effectué le retrait !");
+        return;
+    }
     if (!reason) {
         alert("Veuillez sélectionner un motif de retrait !");
         return;
@@ -467,26 +500,28 @@ function respWithdrawFromPettyCash() {
         return;
     }
 
-    if (confirm(`Retirer ${amount} Gdes de la petite caisse pour le motif : "${reason}" ?`)) {
+    if (confirm(`Retirer ${amount} Gdes de la petite caisse pour le motif : "${reason}" (agent: ${agent}) ?`)) {
         state.pettyCash -= amount;
 
-        // Enregistrer la dépense
+        // Enregistrer la dépense avec l'agent choisi
         const expenseRecord = {
             id: 'EXP' + Date.now(),
             date: new Date().toISOString().split('T')[0],
             time: new Date().toLocaleTimeString('fr-FR'),
             amount: -amount,
             reason: reason,
-            by: state.currentUser.username,
+            by: agent,               // ← l'agent sélectionné
+            requestedBy: state.currentUser.username, // le responsable qui initie
             type: 'petty_cash_withdrawal'
         };
 
         if (!state.reports) state.reports = [];
         state.reports.push(expenseRecord);
 
-        alert(`Retrait de ${amount} Gdes effectué avec succès. Motif: ${reason}`);
+        alert(`Retrait de ${amount} Gdes effectué avec succès. Motif: ${reason}, Agent: ${agent}`);
 
         document.getElementById('petty-cash-amount').value = '';
+        agentSelect.value = '';
         reasonSelect.value = '';
         otherInput.value = '';
         otherInput.style.display = 'none';
@@ -568,31 +603,116 @@ function respUpdateCreditDisplay(patientId) {
     }
 }
 
-// Générer un rapport – réutilisation des fonctions existantes mais encapsulées
-function respGenerateReport() {
-    // On appelle directement generateReport() car elle ne modifie pas l'état, seulement affiche
-    // Mais pour éviter toute confusion, on peut créer une copie allégée
-    if (typeof generateReport === 'function') {
-        generateReport();
-    } else {
-        alert("Fonction de rapport non disponible");
+// ========== RAPPORTS SANS MONTANTS (pour responsable) ==========
+
+// Générer un rapport de toutes les transactions sans afficher les montants
+function respGenerateReportNoAmounts() {
+    const startDate = document.getElementById('report-start-date')?.value;
+    const endDate = document.getElementById('report-end-date')?.value;
+
+    // Filtrer les transactions selon les dates
+    let transactions = state.transactions || [];
+    if (startDate) {
+        transactions = transactions.filter(t => t.date >= startDate);
     }
+    if (endDate) {
+        transactions = transactions.filter(t => t.date <= endDate);
+    }
+
+    // Trier par date décroissante
+    transactions.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    const container = document.getElementById('report-results');
+    if (!container) return;
+
+    let html = '<h4>Rapport des services (montants masqués)</h4>';
+    html += '<table class="table-container"><thead><tr><th>Date</th><th>Patient</th><th>Service</th><th>Statut</th><th>Type</th></tr></thead><tbody>';
+
+    if (transactions.length === 0) {
+        html += '<tr><td colspan="5" class="text-center">Aucune transaction trouvée</td></tr>';
+    } else {
+        transactions.forEach(t => {
+            const patient = state.patients.find(p => p.id === t.patientId);
+            const patientName = patient ? patient.fullName : t.patientId;
+            html += `<tr>
+                <td>${t.date}</td>
+                <td>${patientName}</td>
+                <td>${t.service}</td>
+                <td>${t.status}</td>
+                <td>${t.type}</td>
+            </tr>`;
+        });
+    }
+    html += '</tbody></table>';
+    container.innerHTML = html;
 }
 
-function respGenerateUserReport() {
-    if (typeof generateUserReport === 'function') {
-        generateUserReport();
-    } else {
-        alert("Fonction de rapport utilisateur non disponible");
+// Générer un rapport utilisateur sans montants
+function respGenerateUserReportNoAmounts() {
+    const user = document.getElementById('report-user-select')?.value;
+    if (!user) {
+        alert("Veuillez sélectionner un utilisateur.");
+        return;
     }
+
+    const startDate = document.getElementById('report-start-date')?.value;
+    const endDate = document.getElementById('report-end-date')?.value;
+
+    let transactions = state.transactions?.filter(t => t.cashier === user || t.createdBy === user) || [];
+    if (startDate) transactions = transactions.filter(t => t.date >= startDate);
+    if (endDate) transactions = transactions.filter(t => t.date <= endDate);
+    transactions.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    const container = document.getElementById('report-results');
+    if (!container) return;
+
+    let html = `<h4>Rapport pour ${user} (montants masqués)</h4>`;
+    html += '<table class="table-container"><thead><tr><th>Date</th><th>Patient</th><th>Service</th><th>Statut</th><th>Type</th></tr></thead><tbody>';
+
+    if (transactions.length === 0) {
+        html += '<tr><td colspan="5" class="text-center">Aucune transaction trouvée</td></tr>';
+    } else {
+        transactions.forEach(t => {
+            const patient = state.patients.find(p => p.id === t.patientId);
+            const patientName = patient ? patient.fullName : t.patientId;
+            html += `<tr>
+                <td>${t.date}</td>
+                <td>${patientName}</td>
+                <td>${t.service}</td>
+                <td>${t.status}</td>
+                <td>${t.type}</td>
+            </tr>`;
+        });
+    }
+    html += '</tbody></table>';
+    container.innerHTML = html;
 }
 
-function respExportReportToCSV() {
-    if (typeof exportReportToCSV === 'function') {
-        exportReportToCSV();
-    } else {
-        alert("Export CSV non disponible");
+// Export CSV sans montants
+function respExportReportToCSVNoAmounts() {
+    // On récupère le tableau généré dans #report-results
+    const table = document.querySelector('#report-results table');
+    if (!table) {
+        alert("Aucun rapport à exporter.");
+        return;
     }
+
+    let csv = [];
+    const rows = table.querySelectorAll('tr');
+    for (let row of rows) {
+        const cols = row.querySelectorAll('td, th');
+        const rowData = [];
+        cols.forEach(col => rowData.push(col.innerText));
+        csv.push(rowData.join(','));
+    }
+
+    const blob = new Blob([csv.join('\n')], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `rapport_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+    window.URL.revokeObjectURL(url);
 }
 
 // Mettre à jour les affichages administratifs (statistiques, caisses)
@@ -601,10 +721,8 @@ function respUpdateAdminDisplay() {
     if (typeof updateCharts === 'function') updateCharts();
     if (typeof updateAdminExtendedDisplay === 'function') updateAdminExtendedDisplay();
 
-    // Mettre à jour les soldes des caisses
-    const mainCashEl = document.getElementById('main-cash-balance');
+    // Mettre à jour UNIQUEMENT la petite caisse (la grande caisse est masquée)
     const pettyCashEl = document.getElementById('petty-cash-balance');
-    if (mainCashEl) mainCashEl.textContent = (state.mainCash || 0).toLocaleString() + ' Gdes';
     if (pettyCashEl) pettyCashEl.textContent = (state.pettyCash || 0).toLocaleString() + ' Gdes';
 }
 
@@ -617,8 +735,12 @@ window.savePrivilege = respSavePrivilege;
 window.addPatientCredit = respAddPatientCredit;
 window.viewCreditHistory = respViewCreditHistory;
 window.transferToPettyCash = function() {
-    alert("Opération non autorisée. Utilisez le retrait avec motif.");
+    alert("Opération non autorisée. Utilisez le retrait avec motif et agent.");
 };
 window.adjustCashierBalance = function() {
     alert("Vous n'avez pas la permission d'ajuster les soldes.");
 };
+// Remplacer les fonctions de rapport par nos versions sans montants
+window.generateReport = respGenerateReportNoAmounts;
+window.generateUserReport = respGenerateUserReportNoAmounts;
+window.exportReportToCSV = respExportReportToCSVNoAmounts;
