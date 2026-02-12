@@ -54,17 +54,21 @@ function disableForbiddenElements() {
         alert("Vous n'avez pas la permission de modifier les transactions.");
     };
 
-    // --- MODIFICATION : Masquer la grande caisse (main cash) ---
+    // --- MASQUER LA GRANDE CAISSE (main cash) ---
     const mainCashBalance = document.getElementById('main-cash-balance');
     if (mainCashBalance) {
         mainCashBalance.style.display = 'none';
-        // Optionnel : masquer aussi le label parent
         const parent = mainCashBalance.closest('.d-flex, .card, .balance-item');
         if (parent) parent.style.display = 'none';
     }
 
-    // --- MODIFICATION : Masquer les montants des services dans d'éventuels affichages statiques ---
-    // (les montants dans l'historique patient et les rapports sont traités ailleurs)
+    // --- MASQUER LES STATISTIQUES FINANCIÈRES GLOBALES ---
+    const statsCards = document.querySelectorAll('.stats-card, .financial-summary, #total-revenue, #daily-revenue, #monthly-revenue');
+    statsCards.forEach(el => {
+        if (el) el.style.display = 'none';
+    });
+
+    // Désactiver l'affichage des montants dans l'historique des transactions (déjà traité dans respSearchPatient)
 }
 
 // --------------------------------------
@@ -81,7 +85,6 @@ function addPettyCashWithdrawUI() {
     agentSelect.style.width = '200px';
     agentSelect.innerHTML = '<option value="">-- Agent ayant effectué le retrait --</option>';
 
-    // Peupler la liste des agents (caissiers)
     if (state.users) {
         state.users
             .filter(user => user.role === 'cashier')
@@ -145,7 +148,6 @@ function attachResponsibleEventListeners() {
     // Recherche patient
     const searchBtn = document.getElementById('search-admin-patient');
     if (searchBtn) {
-        // Remplacer l'ancien écouteur par le nôtre
         searchBtn.removeEventListener('click', searchAdminPatient);
         searchBtn.addEventListener('click', respSearchPatient);
     }
@@ -157,10 +159,10 @@ function attachResponsibleEventListeners() {
         savePrivBtn.addEventListener('click', respSavePrivilege);
     }
 
-    // Changement du type de privilège (réutilisation de la même fonction car purement UI)
+    // Changement du type de privilège
     const privilegeSelect = document.getElementById('privilege-type');
     if (privilegeSelect) {
-        privilegeSelect.removeEventListener('change', privilegeSelect.change); // retirer ancien
+        privilegeSelect.removeEventListener('change', privilegeSelect.change);
         privilegeSelect.addEventListener('change', function() {
             const discountSection = document.getElementById('discount-section');
             const creditSection = document.getElementById('credit-section');
@@ -190,7 +192,7 @@ function attachResponsibleEventListeners() {
         viewCreditHistoryBtn.addEventListener('click', respViewCreditHistory);
     }
 
-    // Rapports - on utilise maintenant nos propres fonctions sans montants
+    // Rapports - version sans montants
     const generateReportBtn = document.getElementById('generate-report-btn');
     if (generateReportBtn) {
         generateReportBtn.removeEventListener('click', generateReport);
@@ -218,7 +220,7 @@ function attachResponsibleEventListeners() {
 
     // Désactiver complètement la modification utilisateur
     const editUserBtn = document.querySelector('#users-list .btn-warning');
-    if (editUserBtn) editUserBtn.style.display = 'none'; // sera géré dans updateUsersList si besoin
+    if (editUserBtn) editUserBtn.style.display = 'none';
 }
 
 // ==================== FONCTIONS RESPONSABLE ====================
@@ -234,7 +236,7 @@ function respSearchPatient() {
         return;
     }
 
-    // Vérifier expiration des privilèges (identique à admin)
+    // Vérifier expiration des privilèges
     if (patient.privilegeGrantedDate) {
         const now = new Date();
         const privilegeDate = new Date(patient.privilegeGrantedDate);
@@ -254,7 +256,7 @@ function respSearchPatient() {
     document.getElementById('admin-patient-name').textContent = patient.fullName + ' (' + patient.id + ')';
     document.getElementById('admin-patient-details').classList.remove('hidden');
 
-    // Mise à jour du selecteur de privilège (identique admin)
+    // Mise à jour du selecteur de privilège
     const privilegeSelect = document.getElementById('privilege-type');
     const discountSection = document.getElementById('discount-section');
     const discountInput = document.getElementById('discount-percentage');
@@ -281,9 +283,8 @@ function respSearchPatient() {
         creditSection.classList.add('hidden');
     }
 
-    // --- MODIFICATION : Historique des transactions – VERSION SANS MONTANTS ---
+    // --- HISTORIQUE DES TRANSACTIONS – VERSION SANS MONTANTS ---
     const history = state.transactions.filter(t => t.patientId === patient.id);
-    // En-tête sans la colonne Montant
     let html = '<table class="table-container"><thead><tr><th>Date</th><th>Service</th><th>Statut</th><th>Type</th></tr></thead><tbody>';
     if (history.length === 0) {
         html += '<tr><td colspan="4" class="text-center">Aucune transaction</td></tr>';
@@ -304,7 +305,7 @@ function respSearchPatient() {
     respUpdateCreditDisplay(patientId);
 }
 
-// Sauvegarder les privilèges (identique à admin, mais sans appliquer de réduction aux transactions existantes)
+// Sauvegarder les privilèges (sans appliquer de réduction aux transactions existantes)
 function respSavePrivilege() {
     const patientId = document.getElementById('admin-patient-search').value.trim();
     const patient = state.patients.find(p => p.id === patientId);
@@ -355,7 +356,6 @@ function respSavePrivilege() {
         alert("Privilèges retirés du patient");
     }
 
-    // Rafraîchir l'affichage
     respSearchPatient();
 }
 
@@ -396,7 +396,6 @@ function respAddPatientCredit() {
         state.creditAccounts[patientId].available = state.creditAccounts[patientId].limit - state.creditAccounts[patientId].used;
     }
 
-    // Historique
     state.creditAccounts[patientId].history.push({
         date: new Date().toISOString().split('T')[0],
         time: new Date().toLocaleTimeString('fr-FR'),
@@ -503,15 +502,14 @@ function respWithdrawFromPettyCash() {
     if (confirm(`Retirer ${amount} Gdes de la petite caisse pour le motif : "${reason}" (agent: ${agent}) ?`)) {
         state.pettyCash -= amount;
 
-        // Enregistrer la dépense avec l'agent choisi
         const expenseRecord = {
             id: 'EXP' + Date.now(),
             date: new Date().toISOString().split('T')[0],
             time: new Date().toLocaleTimeString('fr-FR'),
             amount: -amount,
             reason: reason,
-            by: agent,               // ← l'agent sélectionné
-            requestedBy: state.currentUser.username, // le responsable qui initie
+            by: agent,
+            requestedBy: state.currentUser.username,
             type: 'petty_cash_withdrawal'
         };
 
@@ -527,6 +525,8 @@ function respWithdrawFromPettyCash() {
         otherInput.style.display = 'none';
 
         respUpdateAdminDisplay();
+        // Actualiser l'affichage des dépenses petite caisse
+        respDisplayPettyCashExpenses();
     }
 }
 
@@ -603,23 +603,44 @@ function respUpdateCreditDisplay(patientId) {
     }
 }
 
-// ========== RAPPORTS SANS MONTANTS (pour responsable) ==========
+// ========== AFFICHAGE DES DÉPENSES PETITE CAISSE ==========
+function respDisplayPettyCashExpenses() {
+    const container = document.getElementById('petty-cash-expenses-container');
+    if (!container) return;
 
-// Générer un rapport de toutes les transactions sans afficher les montants
+    // Récupérer toutes les dépenses de petite caisse depuis state.reports ou state.transactions
+    const expenses = (state.reports || []).filter(r => r.type === 'petty_cash_withdrawal')
+        .sort((a, b) => new Date(b.date + 'T' + b.time) - new Date(a.date + 'T' + a.time));
+
+    let html = '<h4>Dépenses de la petite caisse</h4>';
+    html += '<table class="table-container"><thead><tr><th>Date/Heure</th><th>Montant</th><th>Motif</th><th>Agent</th><th>Demandé par</th></tr></thead><tbody>';
+
+    if (expenses.length === 0) {
+        html += '<tr><td colspan="5" class="text-center">Aucune dépense enregistrée</td></tr>';
+    } else {
+        expenses.forEach(exp => {
+            html += `<tr>
+                <td>${exp.date} ${exp.time}</td>
+                <td>${Math.abs(exp.amount).toLocaleString()} Gdes</td>
+                <td>${exp.reason}</td>
+                <td>${exp.by}</td>
+                <td>${exp.requestedBy || '-'}</td>
+            </tr>`;
+        });
+    }
+    html += '</tbody></table>';
+
+    container.innerHTML = html;
+}
+
+// ========== RAPPORTS SANS MONTANTS ==========
 function respGenerateReportNoAmounts() {
     const startDate = document.getElementById('report-start-date')?.value;
     const endDate = document.getElementById('report-end-date')?.value;
 
-    // Filtrer les transactions selon les dates
     let transactions = state.transactions || [];
-    if (startDate) {
-        transactions = transactions.filter(t => t.date >= startDate);
-    }
-    if (endDate) {
-        transactions = transactions.filter(t => t.date <= endDate);
-    }
-
-    // Trier par date décroissante
+    if (startDate) transactions = transactions.filter(t => t.date >= startDate);
+    if (endDate) transactions = transactions.filter(t => t.date <= endDate);
     transactions.sort((a, b) => new Date(b.date) - new Date(a.date));
 
     const container = document.getElementById('report-results');
@@ -645,9 +666,11 @@ function respGenerateReportNoAmounts() {
     }
     html += '</tbody></table>';
     container.innerHTML = html;
+
+    // Ajouter également le tableau des dépenses petite caisse
+    respDisplayPettyCashExpenses();
 }
 
-// Générer un rapport utilisateur sans montants
 function respGenerateUserReportNoAmounts() {
     const user = document.getElementById('report-user-select')?.value;
     if (!user) {
@@ -688,9 +711,7 @@ function respGenerateUserReportNoAmounts() {
     container.innerHTML = html;
 }
 
-// Export CSV sans montants
 function respExportReportToCSVNoAmounts() {
-    // On récupère le tableau généré dans #report-results
     const table = document.querySelector('#report-results table');
     if (!table) {
         alert("Aucun rapport à exporter.");
@@ -715,21 +736,28 @@ function respExportReportToCSVNoAmounts() {
     window.URL.revokeObjectURL(url);
 }
 
-// Mettre à jour les affichages administratifs (statistiques, caisses)
+// Mettre à jour les affichages administratifs (version responsable : seulement petite caisse, pas de stats financières)
 function respUpdateAdminDisplay() {
-    if (typeof updateAdminStats === 'function') updateAdminStats();
-    if (typeof updateCharts === 'function') updateCharts();
-    if (typeof updateAdminExtendedDisplay === 'function') updateAdminExtendedDisplay();
+    // Ne pas appeler les fonctions d'origine qui affichent des montants
+    // On met à jour uniquement la petite caisse et les dépenses associées
 
-    // Mettre à jour UNIQUEMENT la petite caisse (la grande caisse est masquée)
     const pettyCashEl = document.getElementById('petty-cash-balance');
     if (pettyCashEl) pettyCashEl.textContent = (state.pettyCash || 0).toLocaleString() + ' Gdes';
+
+    // Mettre à jour l'affichage des dépenses petite caisse si le conteneur existe
+    respDisplayPettyCashExpenses();
+
+    // Si des graphiques ou stats sont présents, on les masque ou on les remplace par des versions vides
+    const statsContainer = document.getElementById('admin-stats');
+    if (statsContainer) statsContainer.style.display = 'none';
+
+    const chartsContainer = document.getElementById('admin-charts');
+    if (chartsContainer) chartsContainer.style.display = 'none';
 }
 
-// Rendre les fonctions accessibles globalement (pour les appels onclick)
+// Rendre les fonctions accessibles globalement
 window.respViewCreditHistory = respViewCreditHistory;
 window.respUpdateCreditDisplay = respUpdateCreditDisplay;
-// On surcharge aussi les anciennes fonctions pour éviter les erreurs
 window.searchAdminPatient = respSearchPatient;
 window.savePrivilege = respSavePrivilege;
 window.addPatientCredit = respAddPatientCredit;
@@ -740,7 +768,6 @@ window.transferToPettyCash = function() {
 window.adjustCashierBalance = function() {
     alert("Vous n'avez pas la permission d'ajuster les soldes.");
 };
-// Remplacer les fonctions de rapport par nos versions sans montants
 window.generateReport = respGenerateReportNoAmounts;
 window.generateUserReport = respGenerateUserReportNoAmounts;
 window.exportReportToCSV = respExportReportToCSVNoAmounts;
