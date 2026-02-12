@@ -149,6 +149,17 @@
                                 <select id="consultation-type-secretary" class="form-control" required>
                                     <option value="">Sélectionner...</option>
                                 </select>
+                                <div style="flex:1" id="consultation-type-container">
+    <label class="form-label">Type de consultation *</label>
+    <select id="consultation-type-secretary" class="form-control" required>
+        <option value="">Sélectionner...</option>
+    </select>
+    <!-- Bouton pour modifier la consultation du patient en cours -->
+    <button type="button" id="modify-current-consultation-btn" class="btn btn-warning btn-sm mt-2">
+        <i class="fas fa-edit"></i> Modifier la consultation
+    </button>
+    <!-- L’ancien bouton peut être supprimé ou conservé caché -->
+</div>
                                 <button type="button" id="modify-consultation-type-btn" class="btn btn-warning btn-sm mt-2 modify-consultation-btn hidden">
                                     <i class="fas fa-edit"></i> Modifier ce type
                                 </button>
