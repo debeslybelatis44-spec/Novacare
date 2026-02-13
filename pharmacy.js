@@ -10,37 +10,72 @@ function setupPharmacy() {
     initializeLocationSelect();
     initializeDepartmentSelect();
     
+    // Mise à jour dynamique des emplacements selon le département
+    const deptSelect = document.getElementById('new-med-department');
+    if (deptSelect) {
+        deptSelect.addEventListener('change', function() {
+            updateLocationOptions(this.value);
+        });
+        // Initialisation au cas où un département est pré-sélectionné
+        updateLocationOptions(deptSelect.value);
+    }
+    
     // Recherche de patient avec le bouton
-    document.getElementById('search-pharmacy-patient').addEventListener('click', searchPatient);
+    const searchPatientBtn = document.getElementById('search-pharmacy-patient');
+    if (searchPatientBtn) {
+        searchPatientBtn.addEventListener('click', searchPatient);
+    } else {
+        console.error("Élément 'search-pharmacy-patient' non trouvé");
+    }
     
     // Recherche de patient avec la touche Entrée
-    document.getElementById('pharmacy-patient-search').addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') {
-            searchPatient();
-        }
-    });
+    const patientSearchInput = document.getElementById('pharmacy-patient-search');
+    if (patientSearchInput) {
+        patientSearchInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                searchPatient();
+            }
+        });
+    }
     
     // Recherche de médicaments dans le stock
-    document.getElementById('search-medication').addEventListener('click', searchMedicationInStock);
+    const searchMedBtn = document.getElementById('search-medication');
+    if (searchMedBtn) {
+        searchMedBtn.addEventListener('click', searchMedicationInStock);
+    } else {
+        console.error("Élément 'search-medication' non trouvé");
+    }
     
     // Recherche de médicaments avec Entrée
-    document.getElementById('medication-search-stock').addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') {
-            searchMedicationInStock();
-        }
-    });
+    const medSearchInput = document.getElementById('medication-search-stock');
+    if (medSearchInput) {
+        medSearchInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                searchMedicationInStock();
+            }
+        });
+    }
     
     // Gestion du formulaire de nouveau médicament
-    document.getElementById('add-new-medication').addEventListener('click', () => {
-        document.getElementById('new-medication-form').style.display = 'block';
-    });
+    const addNewMedBtn = document.getElementById('add-new-medication');
+    if (addNewMedBtn) {
+        addNewMedBtn.addEventListener('click', () => {
+            document.getElementById('new-medication-form').style.display = 'block';
+        });
+    }
     
-    document.getElementById('cancel-new-medication').addEventListener('click', () => {
-        document.getElementById('new-medication-form').style.display = 'none';
-        resetNewMedicationForm();
-    });
+    const cancelNewMedBtn = document.getElementById('cancel-new-medication');
+    if (cancelNewMedBtn) {
+        cancelNewMedBtn.addEventListener('click', () => {
+            document.getElementById('new-medication-form').style.display = 'none';
+            resetNewMedicationForm();
+        });
+    }
     
-    document.getElementById('save-new-medication').addEventListener('click', addNewMedication);
+    const saveNewMedBtn = document.getElementById('save-new-medication');
+    if (saveNewMedBtn) {
+        saveNewMedBtn.addEventListener('click', addNewMedication);
+    }
     
     // Initialiser l'affichage du stock
     updateMedicationStock();
@@ -48,6 +83,7 @@ function setupPharmacy() {
 
 function searchPatient() {
     const searchInput = document.getElementById('pharmacy-patient-search');
+    if (!searchInput) return;
     const searchValue = searchInput.value.trim();
     
     if (!searchValue) {
@@ -147,6 +183,7 @@ function displayPatientDetails(patient) {
 
 function searchMedicationInStock() {
     const searchInput = document.getElementById('medication-search-stock');
+    if (!searchInput) return;
     const searchValue = searchInput.value.trim().toLowerCase();
     
     if (!searchValue) {
@@ -167,6 +204,7 @@ function searchMedicationInStock() {
 
 function displayFilteredMedications(medications) {
     const container = document.getElementById('medication-stock-list');
+    if (!container) return;
     const today = new Date();
     
     let html = '';
@@ -246,44 +284,17 @@ function displayFilteredMedications(medications) {
 }
 
 function initializeLocationSelect() {
+    // On ne remplit pas directement, on utilise updateLocationOptions
+    // Juste pour s'assurer que le select existe
     const select = document.getElementById('new-med-location');
-    select.innerHTML = '<option value="">Sélectionner un emplacement</option>';
-    
-    // Sections A: A1 à A20
-    for (let i = 1; i <= 20; i++) {
-        select.innerHTML += `<option value="A${i}">A${i}</option>`;
+    if (select) {
+        select.innerHTML = '<option value="">Sélectionner un emplacement</option>';
     }
-    
-    // Sections B: B1 à B18
-    for (let i = 1; i <= 18; i++) {
-        select.innerHTML += `<option value="B${i}">B${i}</option>`;
-    }
-    
-    // Sections C: C1 à C18
-    for (let i = 1; i <= 18; i++) {
-        select.innerHTML += `<option value="C${i}">C${i}</option>`;
-    }
-    
-    // Sections D: D1 à D18
-    for (let i = 1; i <= 18; i++) {
-        select.innerHTML += `<option value="D${i}">D${i}</option>`;
-    }
-    
-    // Section des sérums (emplacements dédiés)
-    select.innerHTML += `<option value="Serum-1">Serum-1</option>`;
-    select.innerHTML += `<option value="Serum-2">Serum-2</option>`;
-    select.innerHTML += `<option value="Serum-3">Serum-3</option>`;
-    select.innerHTML += `<option value="Serum-4">Serum-4</option>`;
-    select.innerHTML += `<option value="Serum-5">Serum-5</option>`;
-    select.innerHTML += `<option value="Serum-6">Serum-6</option>`;
-    select.innerHTML += `<option value="Serum-7">Serum-7</option>`;
-    select.innerHTML += `<option value="Serum-8">Serum-8</option>`;
-    select.innerHTML += `<option value="Serum-9">Serum-9</option>`;
-    select.innerHTML += `<option value="Serum-10">Serum-10</option>`;
 }
 
 function initializeDepartmentSelect() {
     const select = document.getElementById('new-med-department');
+    if (!select) return;
     select.innerHTML = '<option value="">Sélectionner un département</option>';
     
     const departments = [
@@ -302,6 +313,64 @@ function initializeDepartmentSelect() {
     departments.forEach(dept => {
         select.innerHTML += `<option value="${dept}">${dept}</option>`;
     });
+}
+
+// Fonction pour déterminer si un département est un type de sérum
+function isSerumDepartment(department) {
+    const serumTypes = [
+        'Sérum',
+        'Sérum mannitol',
+        'Ringer',
+        'Dextrose 5%',
+        'Dextrose 10%',
+        'DNS 0,33%',
+        'DNS 0,225%',
+        'NaCl 0,9%',
+        'NaCl 0,45%'
+    ];
+    return serumTypes.includes(department);
+}
+
+// Met à jour les options de l'emplacement en fonction du département sélectionné
+function updateLocationOptions(department) {
+    const locationSelect = document.getElementById('new-med-location');
+    if (!locationSelect) return;
+    
+    // Sauvegarder la valeur actuelle si elle existe
+    const currentValue = locationSelect.value;
+    
+    // Vider le select
+    locationSelect.innerHTML = '<option value="">Sélectionner un emplacement</option>';
+    
+    if (isSerumDepartment(department)) {
+        // Uniquement les emplacements Serum-1 à Serum-10
+        for (let i = 1; i <= 10; i++) {
+            const value = `Serum-${i}`;
+            locationSelect.innerHTML += `<option value="${value}">${value}</option>`;
+        }
+    } else {
+        // Sections A, B, C, D
+        for (let i = 1; i <= 20; i++) {
+            locationSelect.innerHTML += `<option value="A${i}">A${i}</option>`;
+        }
+        for (let i = 1; i <= 18; i++) {
+            locationSelect.innerHTML += `<option value="B${i}">B${i}</option>`;
+        }
+        for (let i = 1; i <= 18; i++) {
+            locationSelect.innerHTML += `<option value="C${i}">C${i}</option>`;
+        }
+        for (let i = 1; i <= 18; i++) {
+            locationSelect.innerHTML += `<option value="D${i}">D${i}</option>`;
+        }
+    }
+    
+    // Restaurer la valeur si elle est toujours valide
+    if (currentValue) {
+        const optionExists = Array.from(locationSelect.options).some(opt => opt.value === currentValue);
+        if (optionExists) {
+            locationSelect.value = currentValue;
+        }
+    }
 }
 
 function deliverMedication(transactionId) {
@@ -395,6 +464,16 @@ function addNewMedication() {
         return;
     }
     
+    // Vérifier la cohérence entre département et emplacement
+    if (isSerumDepartment(department) && !location.startsWith('Serum-')) {
+        alert("Pour un département de type sérum, l'emplacement doit être dans la zone Serum (Serum-1 à Serum-10).");
+        return;
+    }
+    if (!isSerumDepartment(department) && location.startsWith('Serum-')) {
+        alert("Les emplacements Serum sont réservés aux sérums. Veuillez choisir un emplacement dans les sections A, B, C ou D.");
+        return;
+    }
+    
     // Vérifier si la date d'expiration est dans le passé
     if (expirationDate) {
         const today = new Date();
@@ -434,6 +513,7 @@ function addNewMedication() {
 
 function updateMedicationStock() {
     const container = document.getElementById('medication-stock-list');
+    if (!container) return;
     const today = new Date();
     
     let html = '';
@@ -518,6 +598,7 @@ function updateLowStockMedications() {
     );
     
     const container = document.getElementById('low-stock-medications');
+    if (!container) return;
     
     if (lowStock.length === 0) {
         container.innerHTML = '<p>Aucun médicament en rupture ou stock faible.</p>';
@@ -560,6 +641,7 @@ function updateExpiringMedications() {
     });
     
     const container = document.getElementById('expiring-medications');
+    if (!container) return;
     
     if (expiringSoon.length === 0 && expired.length === 0) {
         container.innerHTML = '<p>Aucun médicament bientôt expiré ou expiré.</p>';
@@ -686,7 +768,7 @@ function editMedication(medId) {
             <div class="form-group">
                 <label>Emplacement:</label>
                 <select id="edit-med-location" class="form-control">
-                    ${getLocationOptions(med.location)}
+                    ${getLocationOptions(med.department, med.location)}
                 </select>
             </div>
             <div class="mt-3">
@@ -702,6 +784,18 @@ function editMedication(medId) {
     modal.innerHTML = `<div class="transaction-details-content">${formHtml}</div>`;
     document.body.appendChild(modal);
     modal.classList.remove('hidden');
+    
+    // Ajouter un écouteur pour mettre à jour les emplacements si le département change
+    const deptSelect = document.getElementById('edit-med-department');
+    if (deptSelect) {
+        deptSelect.addEventListener('change', function() {
+            const locationSelect = document.getElementById('edit-med-location');
+            if (locationSelect) {
+                const currentLocation = locationSelect.value;
+                locationSelect.innerHTML = getLocationOptions(this.value, currentLocation);
+            }
+        });
+    }
 }
 
 function getDepartmentOptions(selected) {
@@ -723,37 +817,33 @@ function getDepartmentOptions(selected) {
     ).join('');
 }
 
-function getLocationOptions(selected) {
-    let options = '';
+function getLocationOptions(department, selectedLocation) {
+    let options = '<option value="">Sélectionner un emplacement</option>';
     
-    // Sections A: A1 à A20
-    for (let i = 1; i <= 20; i++) {
-        const value = `A${i}`;
-        options += `<option value="${value}" ${value === selected ? 'selected' : ''}>${value}</option>`;
-    }
-    
-    // Sections B: B1 à B18
-    for (let i = 1; i <= 18; i++) {
-        const value = `B${i}`;
-        options += `<option value="${value}" ${value === selected ? 'selected' : ''}>${value}</option>`;
-    }
-    
-    // Sections C: C1 à C18
-    for (let i = 1; i <= 18; i++) {
-        const value = `C${i}`;
-        options += `<option value="${value}" ${value === selected ? 'selected' : ''}>${value}</option>`;
-    }
-    
-    // Sections D: D1 à D18
-    for (let i = 1; i <= 18; i++) {
-        const value = `D${i}`;
-        options += `<option value="${value}" ${value === selected ? 'selected' : ''}>${value}</option>`;
-    }
-    
-    // Section des sérums
-    for (let i = 1; i <= 10; i++) {
-        const value = `Serum-${i}`;
-        options += `<option value="${value}" ${value === selected ? 'selected' : ''}>${value}</option>`;
+    if (isSerumDepartment(department)) {
+        // Uniquement les emplacements Serum-1 à Serum-10
+        for (let i = 1; i <= 10; i++) {
+            const value = `Serum-${i}`;
+            options += `<option value="${value}" ${value === selectedLocation ? 'selected' : ''}>${value}</option>`;
+        }
+    } else {
+        // Sections A, B, C, D
+        for (let i = 1; i <= 20; i++) {
+            const value = `A${i}`;
+            options += `<option value="${value}" ${value === selectedLocation ? 'selected' : ''}>${value}</option>`;
+        }
+        for (let i = 1; i <= 18; i++) {
+            const value = `B${i}`;
+            options += `<option value="${value}" ${value === selectedLocation ? 'selected' : ''}>${value}</option>`;
+        }
+        for (let i = 1; i <= 18; i++) {
+            const value = `C${i}`;
+            options += `<option value="${value}" ${value === selectedLocation ? 'selected' : ''}>${value}</option>`;
+        }
+        for (let i = 1; i <= 18; i++) {
+            const value = `D${i}`;
+            options += `<option value="${value}" ${value === selectedLocation ? 'selected' : ''}>${value}</option>`;
+        }
     }
     
     return options;
@@ -774,6 +864,19 @@ function saveMedicationEdit(medId) {
         return;
     }
     
+    const newDepartment = document.getElementById('edit-med-department').value;
+    const newLocation = document.getElementById('edit-med-location').value;
+    
+    // Vérifier la cohérence entre département et emplacement
+    if (isSerumDepartment(newDepartment) && !newLocation.startsWith('Serum-')) {
+        alert("Pour un département de type sérum, l'emplacement doit être dans la zone Serum (Serum-1 à Serum-10).");
+        return;
+    }
+    if (!isSerumDepartment(newDepartment) && newLocation.startsWith('Serum-')) {
+        alert("Les emplacements Serum sont réservés aux sérums. Veuillez choisir un emplacement dans les sections A, B, C ou D.");
+        return;
+    }
+    
     med.name = newName;
     med.genericName = document.getElementById('edit-med-generic').value.trim();
     med.form = document.getElementById('edit-med-form').value;
@@ -782,8 +885,8 @@ function saveMedicationEdit(medId) {
     med.alertThreshold = parseInt(document.getElementById('edit-med-alert').value);
     med.price = parseFloat(document.getElementById('edit-med-price').value);
     med.expirationDate = document.getElementById('edit-med-expiration').value || null;
-    med.location = document.getElementById('edit-med-location').value;
-    med.department = document.getElementById('edit-med-department').value;
+    med.location = newLocation;
+    med.department = newDepartment;
     med.lastModified = new Date().toISOString().split('T')[0];
     med.modifiedBy = state.currentUser.username;
     

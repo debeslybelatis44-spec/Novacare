@@ -19,10 +19,15 @@ function setupResponsible() {
     // 1. Masquer / désactiver les éléments interdits pour le responsable
     disableForbiddenElements();
 
-    // 2. Attacher nos propres écouteurs d'événements
+    // 2. Remplacer les fonctions de statistiques par des versions sans montants
+    window.updateAdminStats = respUpdateAdminStatsNoAmounts;
+    window.updateCharts = respUpdateChartsNoAmounts;
+    window.updateAdminExtendedDisplay = respUpdateAdminExtendedNoAmounts;
+
+    // 3. Attacher nos propres écouteurs d'événements
     attachResponsibleEventListeners();
 
-    // 3. Mettre à jour l'affichage (statistiques, caisses)
+    // 4. Mettre à jour l'affichage (statistiques, caisses)
     respUpdateAdminDisplay();
 }
 
@@ -54,21 +59,17 @@ function disableForbiddenElements() {
         alert("Vous n'avez pas la permission de modifier les transactions.");
     };
 
-    // --- MASQUER LA GRANDE CAISSE (main cash) ---
+    // --- MODIFICATION : Masquer la grande caisse (main cash) ---
     const mainCashBalance = document.getElementById('main-cash-balance');
     if (mainCashBalance) {
         mainCashBalance.style.display = 'none';
+        // Optionnel : masquer aussi le label parent
         const parent = mainCashBalance.closest('.d-flex, .card, .balance-item');
         if (parent) parent.style.display = 'none';
     }
 
-    // --- MASQUER LES STATISTIQUES FINANCIÈRES GLOBALES ---
-    const statsCards = document.querySelectorAll('.stats-card, .financial-summary, #total-revenue, #daily-revenue, #monthly-revenue');
-    statsCards.forEach(el => {
-        if (el) el.style.display = 'none';
-    });
-
-    // Désactiver l'affichage des montants dans l'historique des transactions (déjà traité dans respSearchPatient)
+    // --- MODIFICATION : Masquer les montants des services dans d'éventuels affichages statiques ---
+    // (les montants dans l'historique patient et les rapports sont traités ailleurs)
 }
 
 // --------------------------------------
@@ -85,6 +86,7 @@ function addPettyCashWithdrawUI() {
     agentSelect.style.width = '200px';
     agentSelect.innerHTML = '<option value="">-- Agent ayant effectué le retrait --</option>';
 
+    // Peupler la liste des agents (caissiers)
     if (state.users) {
         state.users
             .filter(user => user.role === 'cashier')
@@ -148,6 +150,7 @@ function attachResponsibleEventListeners() {
     // Recherche patient
     const searchBtn = document.getElementById('search-admin-patient');
     if (searchBtn) {
+        // Remplacer l'ancien écouteur par le nôtre
         searchBtn.removeEventListener('click', searchAdminPatient);
         searchBtn.addEventListener('click', respSearchPatient);
     }
@@ -159,10 +162,10 @@ function attachResponsibleEventListeners() {
         savePrivBtn.addEventListener('click', respSavePrivilege);
     }
 
-    // Changement du type de privilège
+    // Changement du type de privilège (réutilisation de la même fonction car purement UI)
     const privilegeSelect = document.getElementById('privilege-type');
     if (privilegeSelect) {
-        privilegeSelect.removeEventListener('change', privilegeSelect.change);
+        privilegeSelect.removeEventListener('change', privilegeSelect.change); // retirer ancien
         privilegeSelect.addEventListener('change', function() {
             const discountSection = document.getElementById('discount-section');
             const creditSection = document.getElementById('credit-section');
@@ -192,7 +195,7 @@ function attachResponsibleEventListeners() {
         viewCreditHistoryBtn.addEventListener('click', respViewCreditHistory);
     }
 
-    // Rapports - version sans montants
+    // Rapports - on utilise maintenant nos propres fonctions sans montants
     const generateReportBtn = document.getElementById('generate-report-btn');
     if (generateReportBtn) {
         generateReportBtn.removeEventListener('click', generateReport);
@@ -220,7 +223,7 @@ function attachResponsibleEventListeners() {
 
     // Désactiver complètement la modification utilisateur
     const editUserBtn = document.querySelector('#users-list .btn-warning');
-    if (editUserBtn) editUserBtn.style.display = 'none';
+    if (editUserBtn) editUserBtn.style.display = 'none'; // sera géré dans updateUsersList si besoin
 }
 
 // ==================== FONCTIONS RESPONSABLE ====================
@@ -236,7 +239,7 @@ function respSearchPatient() {
         return;
     }
 
-    // Vérifier expiration des privilèges
+    // Vérifier expiration des privilèges (identique à admin)
     if (patient.privilegeGrantedDate) {
         const now = new Date();
         const privilegeDate = new Date(patient.privilegeGrantedDate);
@@ -256,7 +259,7 @@ function respSearchPatient() {
     document.getElementById('admin-patient-name').textContent = patient.fullName + ' (' + patient.id + ')';
     document.getElementById('admin-patient-details').classList.remove('hidden');
 
-    // Mise à jour du selecteur de privilège
+    // Mise à jour du selecteur de privilège (identique admin)
     const privilegeSelect = document.getElementById('privilege-type');
     const discountSection = document.getElementById('discount-section');
     const discountInput = document.getElementById('discount-percentage');
@@ -283,8 +286,9 @@ function respSearchPatient() {
         creditSection.classList.add('hidden');
     }
 
-    // --- HISTORIQUE DES TRANSACTIONS – VERSION SANS MONTANTS ---
+    // --- MODIFICATION : Historique des transactions – VERSION SANS MONTANTS ---
     const history = state.transactions.filter(t => t.patientId === patient.id);
+    // En-tête sans la colonne Montant
     let html = '<table class="table-container"><thead><tr><th>Date</th><th>Service</th><th>Statut</th><th>Type</th></tr></thead><tbody>';
     if (history.length === 0) {
         html += '<tr><td colspan="4" class="text-center">Aucune transaction</td></tr>';
@@ -305,7 +309,7 @@ function respSearchPatient() {
     respUpdateCreditDisplay(patientId);
 }
 
-// Sauvegarder les privilèges (sans appliquer de réduction aux transactions existantes)
+// Sauvegarder les privilèges (identique à admin, mais sans appliquer de réduction aux transactions existantes)
 function respSavePrivilege() {
     const patientId = document.getElementById('admin-patient-search').value.trim();
     const patient = state.patients.find(p => p.id === patientId);
@@ -356,6 +360,7 @@ function respSavePrivilege() {
         alert("Privilèges retirés du patient");
     }
 
+    // Rafraîchir l'affichage
     respSearchPatient();
 }
 
@@ -396,6 +401,7 @@ function respAddPatientCredit() {
         state.creditAccounts[patientId].available = state.creditAccounts[patientId].limit - state.creditAccounts[patientId].used;
     }
 
+    // Historique
     state.creditAccounts[patientId].history.push({
         date: new Date().toISOString().split('T')[0],
         time: new Date().toLocaleTimeString('fr-FR'),
@@ -502,14 +508,15 @@ function respWithdrawFromPettyCash() {
     if (confirm(`Retirer ${amount} Gdes de la petite caisse pour le motif : "${reason}" (agent: ${agent}) ?`)) {
         state.pettyCash -= amount;
 
+        // Enregistrer la dépense avec l'agent choisi
         const expenseRecord = {
             id: 'EXP' + Date.now(),
             date: new Date().toISOString().split('T')[0],
             time: new Date().toLocaleTimeString('fr-FR'),
             amount: -amount,
             reason: reason,
-            by: agent,
-            requestedBy: state.currentUser.username,
+            by: agent,               // ← l'agent sélectionné
+            requestedBy: state.currentUser.username, // le responsable qui initie
             type: 'petty_cash_withdrawal'
         };
 
@@ -525,8 +532,6 @@ function respWithdrawFromPettyCash() {
         otherInput.style.display = 'none';
 
         respUpdateAdminDisplay();
-        // Actualiser l'affichage des dépenses petite caisse
-        respDisplayPettyCashExpenses();
     }
 }
 
@@ -603,44 +608,23 @@ function respUpdateCreditDisplay(patientId) {
     }
 }
 
-// ========== AFFICHAGE DES DÉPENSES PETITE CAISSE ==========
-function respDisplayPettyCashExpenses() {
-    const container = document.getElementById('petty-cash-expenses-container');
-    if (!container) return;
+// ========== RAPPORTS SANS MONTANTS (pour responsable) ==========
 
-    // Récupérer toutes les dépenses de petite caisse depuis state.reports ou state.transactions
-    const expenses = (state.reports || []).filter(r => r.type === 'petty_cash_withdrawal')
-        .sort((a, b) => new Date(b.date + 'T' + b.time) - new Date(a.date + 'T' + a.time));
-
-    let html = '<h4>Dépenses de la petite caisse</h4>';
-    html += '<table class="table-container"><thead><tr><th>Date/Heure</th><th>Montant</th><th>Motif</th><th>Agent</th><th>Demandé par</th></tr></thead><tbody>';
-
-    if (expenses.length === 0) {
-        html += '<tr><td colspan="5" class="text-center">Aucune dépense enregistrée</td></tr>';
-    } else {
-        expenses.forEach(exp => {
-            html += `<tr>
-                <td>${exp.date} ${exp.time}</td>
-                <td>${Math.abs(exp.amount).toLocaleString()} Gdes</td>
-                <td>${exp.reason}</td>
-                <td>${exp.by}</td>
-                <td>${exp.requestedBy || '-'}</td>
-            </tr>`;
-        });
-    }
-    html += '</tbody></table>';
-
-    container.innerHTML = html;
-}
-
-// ========== RAPPORTS SANS MONTANTS ==========
+// Générer un rapport de toutes les transactions sans afficher les montants
 function respGenerateReportNoAmounts() {
     const startDate = document.getElementById('report-start-date')?.value;
     const endDate = document.getElementById('report-end-date')?.value;
 
+    // Filtrer les transactions selon les dates
     let transactions = state.transactions || [];
-    if (startDate) transactions = transactions.filter(t => t.date >= startDate);
-    if (endDate) transactions = transactions.filter(t => t.date <= endDate);
+    if (startDate) {
+        transactions = transactions.filter(t => t.date >= startDate);
+    }
+    if (endDate) {
+        transactions = transactions.filter(t => t.date <= endDate);
+    }
+
+    // Trier par date décroissante
     transactions.sort((a, b) => new Date(b.date) - new Date(a.date));
 
     const container = document.getElementById('report-results');
@@ -666,11 +650,9 @@ function respGenerateReportNoAmounts() {
     }
     html += '</tbody></table>';
     container.innerHTML = html;
-
-    // Ajouter également le tableau des dépenses petite caisse
-    respDisplayPettyCashExpenses();
 }
 
+// Générer un rapport utilisateur sans montants
 function respGenerateUserReportNoAmounts() {
     const user = document.getElementById('report-user-select')?.value;
     if (!user) {
@@ -711,7 +693,9 @@ function respGenerateUserReportNoAmounts() {
     container.innerHTML = html;
 }
 
+// Export CSV sans montants
 function respExportReportToCSVNoAmounts() {
+    // On récupère le tableau généré dans #report-results
     const table = document.querySelector('#report-results table');
     if (!table) {
         alert("Aucun rapport à exporter.");
@@ -736,28 +720,70 @@ function respExportReportToCSVNoAmounts() {
     window.URL.revokeObjectURL(url);
 }
 
-// Mettre à jour les affichages administratifs (version responsable : seulement petite caisse, pas de stats financières)
-function respUpdateAdminDisplay() {
-    // Ne pas appeler les fonctions d'origine qui affichent des montants
-    // On met à jour uniquement la petite caisse et les dépenses associées
+// ========== STATISTIQUES SANS MONTANTS POUR LE RESPONSABLE ==========
 
-    const pettyCashEl = document.getElementById('petty-cash-balance');
-    if (pettyCashEl) pettyCashEl.textContent = (state.pettyCash || 0).toLocaleString() + ' Gdes';
-
-    // Mettre à jour l'affichage des dépenses petite caisse si le conteneur existe
-    respDisplayPettyCashExpenses();
-
-    // Si des graphiques ou stats sont présents, on les masque ou on les remplace par des versions vides
+// Version allégée de updateAdminStats : affiche uniquement des compteurs (pas de montants)
+function respUpdateAdminStatsNoAmounts() {
     const statsContainer = document.getElementById('admin-stats');
-    if (statsContainer) statsContainer.style.display = 'none';
+    if (!statsContainer) return;
 
-    const chartsContainer = document.getElementById('admin-charts');
-    if (chartsContainer) chartsContainer.style.display = 'none';
+    const totalPatients = state.patients.length;
+    const totalTransactions = state.transactions.length;
+
+    // Compter les transactions par service
+    const serviceCounts = {};
+    state.transactions.forEach(t => {
+        serviceCounts[t.service] = (serviceCounts[t.service] || 0) + 1;
+    });
+
+    let serviceHtml = '<ul>';
+    for (const [service, count] of Object.entries(serviceCounts)) {
+        serviceHtml += `<li>${service} : ${count} consultation(s)</li>`;
+    }
+    serviceHtml += '</ul>';
+
+    statsContainer.innerHTML = `
+        <h4>Statistiques (montants masqués)</h4>
+        <p><strong>Total patients :</strong> ${totalPatients}</p>
+        <p><strong>Total transactions :</strong> ${totalTransactions}</p>
+        <h5>Répartition par service :</h5>
+        ${serviceHtml}
+    `;
 }
 
-// Rendre les fonctions accessibles globalement
+// Version sans montants pour les graphiques (on les désactive ou on montre un message)
+function respUpdateChartsNoAmounts() {
+    const chartsContainer = document.getElementById('charts-container');
+    if (chartsContainer) {
+        chartsContainer.innerHTML = '<p>Graphiques non disponibles (responsable)</p>';
+    }
+}
+
+// Extension éventuelle (on la vide)
+function respUpdateAdminExtendedNoAmounts() {
+    // Ne rien faire ou afficher des infos non monétaires si besoin
+    const extendedContainer = document.getElementById('admin-extended');
+    if (extendedContainer) {
+        // On peut par exemple y mettre des stats supplémentaires sans montants
+    }
+}
+
+// Mettre à jour les affichages administratifs (statistiques, caisses)
+function respUpdateAdminDisplay() {
+    // Appeler nos propres versions sans montants
+    respUpdateAdminStatsNoAmounts();
+    respUpdateChartsNoAmounts();
+    respUpdateAdminExtendedNoAmounts();
+
+    // Mettre à jour UNIQUEMENT la petite caisse (la grande caisse est masquée)
+    const pettyCashEl = document.getElementById('petty-cash-balance');
+    if (pettyCashEl) pettyCashEl.textContent = (state.pettyCash || 0).toLocaleString() + ' Gdes';
+}
+
+// Rendre les fonctions accessibles globalement (pour les appels onclick)
 window.respViewCreditHistory = respViewCreditHistory;
 window.respUpdateCreditDisplay = respUpdateCreditDisplay;
+// On surcharge aussi les anciennes fonctions pour éviter les erreurs
 window.searchAdminPatient = respSearchPatient;
 window.savePrivilege = respSavePrivilege;
 window.addPatientCredit = respAddPatientCredit;
@@ -768,6 +794,7 @@ window.transferToPettyCash = function() {
 window.adjustCashierBalance = function() {
     alert("Vous n'avez pas la permission d'ajuster les soldes.");
 };
+// Remplacer les fonctions de rapport par nos versions sans montants
 window.generateReport = respGenerateReportNoAmounts;
 window.generateUserReport = respGenerateUserReportNoAmounts;
 window.exportReportToCSV = respExportReportToCSVNoAmounts;
