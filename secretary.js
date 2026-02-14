@@ -6,6 +6,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 let currentEditingPatientId = null; // Pour savoir quel patient est en cours d'édition/modification
+let consultationModifiedForCurrentPatient = false; // Indique si la consultation a été modifiée via le panneau
 
 function setupSecretary() {
     // Initialisation
@@ -107,6 +108,9 @@ function setupSecretary() {
             state.transactions.push(transaction);
         }
         
+        // Marquer que la consultation a été modifiée pour ce patient
+        consultationModifiedForCurrentPatient = true;
+        
         // Mettre à jour le texte de l'option sélectionnée pour refléter la modification
         const select = document.getElementById('consultation-type-secretary');
         const selectedOption = select.options[select.selectedIndex];
@@ -116,12 +120,16 @@ function setupSecretary() {
         
         document.getElementById('consultation-modification-secretary').classList.add('hidden');
         
+        // Rafraîchir la liste des patients du jour
+        updateTodayPatientsList();
+        
         alert("Consultation modifiée avec succès pour ce patient.");
     });
 
     // Gérer l'annulation
     document.getElementById('cancel-consultation-modification').addEventListener('click', function() {
         document.getElementById('consultation-modification-secretary').classList.add('hidden');
+        consultationModifiedForCurrentPatient = false;
     });
     
     // Écouteur pour le changement de type de patient
@@ -286,11 +294,14 @@ function registerPatient(e) {
             );
             
             if (transaction) {
-                // Mise à jour
-                transaction.service = `Consultation: ${consultationType.name}`;
-                transaction.amount = consultationType.price;
-                transaction.date = new Date().toISOString().split('T')[0];
-                transaction.time = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+                // Si la consultation a été modifiée via le panneau, on ne l'écrase pas
+                if (!consultationModifiedForCurrentPatient) {
+                    // Mise à jour
+                    transaction.service = `Consultation: ${consultationType.name}`;
+                    transaction.amount = consultationType.price;
+                    transaction.date = new Date().toISOString().split('T')[0];
+                    transaction.time = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+                }
             } else {
                 // Création
                 transaction = {
@@ -356,6 +367,7 @@ function registerPatient(e) {
     document.getElementById('modify-consultation-type-btn').classList.add('hidden');
     document.getElementById('consultation-modification-secretary').classList.add('hidden');
     currentEditingPatientId = null; // sortir du mode édition
+    consultationModifiedForCurrentPatient = false; // réinitialiser l'indicateur
     
     // Mettre à jour les listes
     updateTodayPatientsList();
@@ -807,6 +819,7 @@ function editPatientRegistration(patientId) {
     
     // Stocker l'ID du patient en cours d'édition
     currentEditingPatientId = patientId;
+    consultationModifiedForCurrentPatient = false; // Réinitialiser pour ce patient
     
     // Remplir le formulaire avec les données du patient
     document.getElementById('patient-fullname').value = patient.fullName;
