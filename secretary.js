@@ -14,63 +14,89 @@ function setupSecretary() {
     updateExternalServicesSelect();
     updateExternalServicesOptions();
     loadAppointmentsList();
-
+    
     // Enregistrement patient (création ou mise à jour)
     document.getElementById('patient-registration-form').addEventListener('submit', registerPatient);
-
+    
     // Recherche patient pour rendez-vous
     document.getElementById('search-appointment-patient').addEventListener('click', searchAppointmentPatient);
     document.getElementById('schedule-appointment').addEventListener('click', scheduleAppointment);
-
+    
     // Services externes
     document.getElementById('search-external-patient').addEventListener('click', searchExternalPatient);
     document.getElementById('add-external-service').addEventListener('click', addExternalService);
     document.getElementById('add-external-service-registration').addEventListener('click', addExternalServiceRegistration);
     document.getElementById('generate-external-invoice').addEventListener('click', generateExternalInvoice);
-
+    
     // Génération de documents
     document.getElementById('generate-patient-id-card').addEventListener('click', generatePatientIDCard);
     document.getElementById('generate-medical-certificate').addEventListener('click', generateMedicalCertificate);
+    
+    // Cacher le panneau de modification de nom/prix pour le secrétariat (par défaut)
+    document.getElementById('consultation-modification-secretary')?.classList.add('hidden');
 
-    // Modification du type de consultation pour le patient en cours d'édition
-    document.getElementById('modify-consultation-type-btn').addEventListener('click', () => {
+    // Afficher le bouton "Modifier ce type" lorsqu'un type de consultation est sélectionné
+    document.getElementById('consultation-type-secretary').addEventListener('change', function() {
+        const modifyBtn = document.getElementById('modify-consultation-type-btn');
+        if (this.value) {
+            modifyBtn.classList.remove('hidden');
+        } else {
+            modifyBtn.classList.add('hidden');
+        }
+    });
+
+    // Gérer le clic sur "Modifier ce type"
+    document.getElementById('modify-consultation-type-btn').addEventListener('click', function() {
         if (!currentEditingPatientId) {
-            alert("Aucun patient sélectionné. Veuillez d'abord rechercher ou éditer un patient.");
+            alert("Veuillez d'abord sélectionner un patient existant à modifier (utilisez le bouton Modifier dans la liste des patients).");
             return;
         }
-
         const select = document.getElementById('consultation-type-secretary');
-        const newConsultationId = select.value;
-        if (!newConsultationId) {
-            alert("Veuillez sélectionner un type de consultation.");
+        const selectedOption = select.options[select.selectedIndex];
+        if (!selectedOption) return;
+        const typeId = select.value;
+        const type = state.consultationTypes.find(t => t.id == typeId);
+        if (!type) return;
+        
+        document.getElementById('modified-consultation-name').value = type.name;
+        document.getElementById('modified-consultation-price').value = type.price;
+        
+        document.getElementById('consultation-modification-secretary').classList.remove('hidden');
+    });
+
+    // Gérer l'enregistrement de la modification
+    document.getElementById('save-modified-consultation').addEventListener('click', function() {
+        if (!currentEditingPatientId) {
+            alert("Aucun patient sélectionné.");
             return;
         }
-
-        const patient = state.patients.find(p => p.id === currentEditingPatientId);
-        const consultationType = state.consultationTypes.find(t => t.id == newConsultationId);
-        if (!patient || !consultationType) {
-            alert("Erreur : patient ou type de consultation introuvable.");
+        const newName = document.getElementById('modified-consultation-name').value.trim();
+        const newPrice = parseFloat(document.getElementById('modified-consultation-price').value);
+        if (!newName || isNaN(newPrice) || newPrice < 0) {
+            alert("Veuillez entrer un nom valide et un prix positif.");
             return;
         }
-
-        // Rechercher une transaction de consultation existante pour ce patient
+        
         let transaction = state.transactions.find(t => 
             t.patientId === currentEditingPatientId && 
             t.type === 'consultation'
         );
-
+        
         if (transaction) {
-            // Mettre à jour la transaction existante
-            transaction.service = `Consultation: ${consultationType.name}`;
-            transaction.amount = consultationType.price;
+            transaction.service = `Consultation: ${newName}`;
+            transaction.amount = newPrice;
         } else {
-            // Créer une nouvelle transaction si aucune n'existe
+            const patient = state.patients.find(p => p.id === currentEditingPatientId);
+            if (!patient) {
+                alert("Patient introuvable.");
+                return;
+            }
             transaction = {
                 id: 'TR' + Date.now(),
                 patientId: patient.id,
                 patientName: patient.fullName,
-                service: `Consultation: ${consultationType.name}`,
-                amount: consultationType.price,
+                service: `Consultation: ${newName}`,
+                amount: newPrice,
                 status: 'unpaid',
                 date: new Date().toISOString().split('T')[0],
                 time: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
@@ -80,27 +106,31 @@ function setupSecretary() {
             };
             state.transactions.push(transaction);
         }
-
-        // Notifier la caisse si nécessaire
-        if (typeof sendNotificationToCashier === 'function') {
-            sendNotificationToCashier(transaction);
+        
+        // Mettre à jour le texte de l'option sélectionnée pour refléter la modification
+        const select = document.getElementById('consultation-type-secretary');
+        const selectedOption = select.options[select.selectedIndex];
+        if (selectedOption) {
+            selectedOption.text = `${newName} - ${newPrice} Gdes (modifié)`;
         }
-
-        // Mise à jour des listes et tableaux de bord
-        updateTodayPatientsList();
-        if (typeof updateRoleDashboard === 'function') updateRoleDashboard();
-        if (typeof updateAdminStats === 'function') updateAdminStats();
-
-        alert(`Consultation modifiée avec succès pour ${patient.fullName} : ${consultationType.name} (${consultationType.price} Gdes)`);
+        
+        document.getElementById('consultation-modification-secretary').classList.add('hidden');
+        
+        alert("Consultation modifiée avec succès pour ce patient.");
     });
 
+    // Gérer l'annulation
+    document.getElementById('cancel-consultation-modification').addEventListener('click', function() {
+        document.getElementById('consultation-modification-secretary').classList.add('hidden');
+    });
+    
     // Écouteur pour le changement de type de patient
     document.querySelectorAll('input[name="patient-type"]').forEach(radio => {
         radio.addEventListener('change', function() {
             const externalOnly = document.getElementById('external-only');
             const consultationTypeContainer = document.getElementById('consultation-type-container');
             const externalServicesSelection = document.getElementById('external-services-selection');
-
+            
             if (this.value === 'externe' || externalOnly.checked) {
                 consultationTypeContainer.classList.add('hidden');
                 externalServicesSelection.classList.remove('hidden');
@@ -110,11 +140,11 @@ function setupSecretary() {
             }
         });
     });
-
+    
     document.getElementById('external-only').addEventListener('change', function() {
         const consultationTypeContainer = document.getElementById('consultation-type-container');
         const externalServicesSelection = document.getElementById('external-services-selection');
-
+        
         if (this.checked) {
             consultationTypeContainer.classList.add('hidden');
             externalServicesSelection.classList.remove('hidden');
@@ -128,7 +158,7 @@ function setupSecretary() {
 function updateConsultationTypesSelect() {
     const select = document.getElementById('consultation-type-secretary');
     if (!select) return;
-
+    
     select.innerHTML = '<option value="">Sélectionner...</option>';
     state.consultationTypes.forEach(type => {
         if (type.active) {
@@ -141,10 +171,10 @@ function updateConsultationTypesSelect() {
 function updateTodayPatientsList() {
     const container = document.getElementById('today-patients-list');
     if (!container) return;
-
+    
     const today = new Date().toISOString().split('T')[0];
     const todayPatients = state.patients.filter(p => p.registrationDate === today);
-
+    
     let html = '';
     todayPatients.forEach(patient => {
         const consultationTransaction = state.transactions.find(t => 
@@ -153,7 +183,7 @@ function updateTodayPatientsList() {
         );
         const consultationType = consultationTransaction ? 
             consultationTransaction.service.replace('Consultation: ', '') : 'Aucune';
-
+        
         html += `
             <tr>
                 <td>${patient.id}</td>
@@ -168,13 +198,13 @@ function updateTodayPatientsList() {
             </tr>
         `;
     });
-
+    
     container.innerHTML = html || '<tr><td colspan="6" class="text-center">Aucun patient enregistré aujourd\'hui</td></tr>';
 }
 
 function registerPatient(e) {
     e.preventDefault();
-
+    
     const fullName = document.getElementById('patient-fullname').value.trim();
     const birthDate = document.getElementById('patient-birthdate').value;
     const address = document.getElementById('patient-address').value.trim();
@@ -185,12 +215,12 @@ function registerPatient(e) {
     const patientType = document.querySelector('input[name="patient-type"]:checked').value;
     const externalOnly = document.getElementById('external-only').checked;
     const consultationTypeId = document.getElementById('consultation-type-secretary').value;
-
+    
     if (!fullName || !birthDate || !phone) {
         alert("Veuillez remplir les champs obligatoires (Nom, Date de naissance, Téléphone)!");
         return;
     }
-
+    
     // --- MODIFICATION : Mise à jour du patient existant ou création ---
     let patient;
     if (currentEditingPatientId) {
@@ -216,10 +246,10 @@ function registerPatient(e) {
         if (patientType === 'urgence') prefix = 'URG';
         if (patientType === 'pediatrie') prefix = 'PED';
         if (patientType === 'externe') prefix = 'EXT';
-
+        
         const patientId = prefix + String(state.patientCounter).padStart(4, '0');
         state.patientCounter++;
-
+        
         patient = {
             id: patientId,
             fullName: fullName,
@@ -244,7 +274,7 @@ function registerPatient(e) {
         state.patients.push(patient);
     }
     // -----------------------------------------------------------------
-
+    
     // Gestion de la transaction de consultation
     if (!externalOnly && consultationTypeId) {
         const consultationType = state.consultationTypes.find(t => t.id == consultationTypeId);
@@ -254,7 +284,7 @@ function registerPatient(e) {
                 t.patientId === patient.id && 
                 t.type === 'consultation'
             );
-
+            
             if (transaction) {
                 // Mise à jour
                 transaction.service = `Consultation: ${consultationType.name}`;
@@ -278,15 +308,13 @@ function registerPatient(e) {
                 };
                 state.transactions.push(transaction);
             }
-            if (typeof sendNotificationToCashier === 'function') {
-                sendNotificationToCashier(transaction);
-            }
+            sendNotificationToCashier(transaction);
         }
     } else {
         // Si pas de consultation, on peut éventuellement supprimer une transaction existante ?
         // (comportement à définir selon les besoins)
     }
-
+    
     // Ajouter les services externes sélectionnés (uniquement en création ?)
     // Ici on les ajoute toujours, mais on pourrait éviter de dupliquer en édition
     const selectedServices = document.querySelectorAll('.external-service-option input:checked');
@@ -312,21 +340,23 @@ function registerPatient(e) {
             state.transactions.push(transaction);
         }
     });
-
+    
     alert(currentEditingPatientId 
         ? `Patient ${patient.fullName} mis à jour avec succès!`
         : `Patient enregistré avec succès!\nID: ${patient.id}`
     );
-
+    
     // Réinitialiser le formulaire et l'état d'édition
     e.target.reset();
     document.getElementById('external-services-selection').classList.add('hidden');
     document.getElementById('consultation-type-container').classList.remove('hidden');
     document.getElementById('external-only').checked = false;
     document.getElementById('consultation-type-secretary').value = ''; // reset select
-    document.getElementById('modify-consultation-type-btn').classList.add('hidden'); // Cacher le bouton de modification
+    // Cacher le bouton de modification et le panneau
+    document.getElementById('modify-consultation-type-btn').classList.add('hidden');
+    document.getElementById('consultation-modification-secretary').classList.add('hidden');
     currentEditingPatientId = null; // sortir du mode édition
-
+    
     // Mettre à jour les listes
     updateTodayPatientsList();
     if (typeof updateRoleDashboard === 'function') updateRoleDashboard();
@@ -339,23 +369,23 @@ function searchAppointmentPatient() {
         p.id.toLowerCase() === search || 
         p.fullName.toLowerCase().includes(search)
     );
-
+    
     if (!patient) {
         alert("Patient non trouvé!");
         return;
     }
-
+    
     document.getElementById('appointment-patient-name').textContent = `${patient.fullName} (${patient.id})`;
     document.getElementById('appointment-patient-details').classList.remove('hidden');
-
+    
     // Définir la date par défaut à demain
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
     document.getElementById('appointment-date').value = tomorrow.toISOString().split('T')[0];
-
+    
     // Définir l'heure par défaut à 09:00
     document.getElementById('appointment-time').value = '09:00';
-
+    
     // Charger les médecins
     loadDoctorsForAppointments();
 }
@@ -363,7 +393,7 @@ function searchAppointmentPatient() {
 function loadDoctorsForAppointments() {
     const select = document.getElementById('appointment-doctor');
     if (!select) return;
-
+    
     select.innerHTML = '<option value="">Sélectionner un médecin</option>';
     const doctors = state.users.filter(u => u.role === 'doctor' && u.active);
     doctors.forEach(doctor => {
@@ -377,18 +407,18 @@ function scheduleAppointment() {
     const time = document.getElementById('appointment-time').value;
     const reason = document.getElementById('appointment-reason').value.trim();
     const doctor = document.getElementById('appointment-doctor').value;
-
+    
     if (!patientId || !date || !time || !reason || !doctor) {
         alert("Veuillez remplir tous les champs!");
         return;
     }
-
+    
     const patient = state.patients.find(p => p.id === patientId);
     if (!patient) {
         alert("Patient non trouvé!");
         return;
     }
-
+    
     const appointment = {
         id: 'APP' + Date.now(),
         patientId: patientId,
@@ -400,11 +430,11 @@ function scheduleAppointment() {
         createdBy: state.currentUser.username,
         status: 'scheduled'
     };
-
+    
     state.appointments.push(appointment);
-
+    
     alert("Rendez-vous programmé avec succès!");
-
+    
     // Réinitialiser
     document.getElementById('appointment-patient-search').value = '';
     document.getElementById('appointment-date').value = '';
@@ -412,7 +442,7 @@ function scheduleAppointment() {
     document.getElementById('appointment-reason').value = '';
     document.getElementById('appointment-doctor').selectedIndex = 0;
     document.getElementById('appointment-patient-details').classList.add('hidden');
-
+    
     // Mettre à jour la liste
     loadAppointmentsList();
 }
@@ -420,18 +450,18 @@ function scheduleAppointment() {
 function loadAppointmentsList() {
     const container = document.getElementById('appointments-list');
     if (!container) return;
-
+    
     const today = new Date().toISOString().split('T')[0];
     const upcomingAppointments = state.appointments.filter(a => a.date >= today)
         .sort((a, b) => new Date(a.date + ' ' + a.time) - new Date(b.date + ' ' + b.time));
-
+    
     if (upcomingAppointments.length === 0) {
         container.innerHTML = '<p>Aucun rendez-vous programmé.</p>';
         return;
     }
-
+    
     let html = '<table class="table-container"><thead><tr><th>Patient</th><th>Date</th><th>Heure</th><th>Motif</th><th>Médecin</th><th>Actions</th></tr></thead><tbody>';
-
+    
     upcomingAppointments.forEach(app => {
         html += `
             <tr>
@@ -447,7 +477,7 @@ function loadAppointmentsList() {
             </tr>
         `;
     });
-
+    
     html += '</tbody></table>';
     container.innerHTML = html;
 }
@@ -466,10 +496,10 @@ function cancelAppointment(appointmentId) {
 function rescheduleAppointment(appointmentId) {
     const appointment = state.appointments.find(a => a.id === appointmentId);
     if (!appointment) return;
-
+    
     const newDate = prompt("Nouvelle date (YYYY-MM-DD):", appointment.date);
     const newTime = prompt("Nouvelle heure (HH:MM):", appointment.time);
-
+    
     if (newDate && newTime) {
         appointment.date = newDate;
         appointment.time = newTime;
@@ -484,15 +514,15 @@ function searchExternalPatient() {
         p.id.toLowerCase() === search || 
         p.fullName.toLowerCase().includes(search)
     );
-
+    
     if (!patient) {
         alert("Patient non trouvé!");
         return;
     }
-
+    
     document.getElementById('external-patient-name').textContent = `${patient.fullName} (${patient.id})`;
     document.getElementById('external-services-container').classList.remove('hidden');
-
+    
     updateExternalServicesForPatient(patient.id);
 }
 
@@ -502,14 +532,14 @@ function updateExternalServicesForPatient(patientId) {
         t.patientId === patientId && 
         t.type === 'external'
     );
-
+    
     if (externalTransactions.length === 0) {
         container.innerHTML = '<p>Aucun service externe pour ce patient.</p>';
         return;
     }
-
+    
     let html = '<table class="table-container"><thead><tr><th>Service</th><th>Montant</th><th>Statut</th><th>Actions</th></tr></thead><tbody>';
-
+    
     externalTransactions.forEach(transaction => {
         html += `
             <tr>
@@ -522,7 +552,7 @@ function updateExternalServicesForPatient(patientId) {
             </tr>
         `;
     });
-
+    
     html += '</tbody></table>';
     container.innerHTML = html;
 }
@@ -537,7 +567,7 @@ function deleteExternalService(transactionId) {
 function updateExternalServicesSelect() {
     const select = document.getElementById('external-service-select');
     if (!select) return;
-
+    
     select.innerHTML = '<option value="">Choisir un service</option>';
     state.externalServiceTypes.forEach(service => {
         if (service.active) {
@@ -549,7 +579,7 @@ function updateExternalServicesSelect() {
 function updateExternalServicesOptions() {
     const container = document.getElementById('external-services-options');
     if (!container) return;
-
+    
     let html = '';
     state.externalServiceTypes.forEach(service => {
         if (service.active) {
@@ -563,7 +593,7 @@ function updateExternalServicesOptions() {
             `;
         }
     });
-
+    
     container.innerHTML = html;
 }
 
@@ -571,22 +601,22 @@ function addExternalService() {
     const patientId = document.getElementById('external-service-search').value.trim();
     const serviceId = document.getElementById('external-service-select').value;
     const customPrice = parseFloat(document.getElementById('new-external-service-price').value);
-
+    
     if (!patientId || !serviceId) {
         alert("Veuillez sélectionner un patient et un service!");
         return;
     }
-
+    
     const patient = state.patients.find(p => p.id === patientId);
     const service = state.externalServiceTypes.find(s => s.id == serviceId);
-
+    
     if (!patient || !service) {
         alert("Patient ou service non trouvé!");
         return;
     }
-
+    
     const price = customPrice > 0 ? customPrice : service.price;
-
+    
     const transaction = {
         id: 'EXT' + Date.now(),
         patientId: patientId,
@@ -600,12 +630,12 @@ function addExternalService() {
         type: 'external',
         notificationSent: false
     };
-
+    
     state.transactions.push(transaction);
-
+    
     document.getElementById('external-service-select').selectedIndex = 0;
     document.getElementById('new-external-service-price').value = '';
-
+    
     updateExternalServicesForPatient(patientId);
     alert("Service externe ajouté avec succès!");
 }
@@ -613,7 +643,7 @@ function addExternalService() {
 function addExternalServiceRegistration() {
     const container = document.getElementById('external-services-options');
     if (!container) return;
-
+    
     let html = container.innerHTML;
     state.externalServiceTypes.forEach(service => {
         if (service.active && !html.includes(`value="${service.id}"`)) {
@@ -627,33 +657,33 @@ function addExternalServiceRegistration() {
             `;
         }
     });
-
+    
     container.innerHTML = html;
 }
 
 function generateExternalInvoice() {
     const patientId = document.getElementById('external-service-search').value.trim();
     const patient = state.patients.find(p => p.id === patientId);
-
+    
     if (!patient) {
         alert("Veuillez d'abord rechercher un patient!");
         return;
     }
-
+    
     const externalTransactions = state.transactions.filter(t => 
         t.patientId === patientId && 
         t.type === 'external' &&
         t.status === 'unpaid'
     );
-
+    
     if (externalTransactions.length === 0) {
         alert("Aucun service externe impayé pour ce patient!");
         return;
     }
-
+    
     let total = 0;
     let servicesHtml = '';
-
+    
     externalTransactions.forEach(transaction => {
         total += transaction.amount;
         servicesHtml += `
@@ -663,7 +693,7 @@ function generateExternalInvoice() {
             </div>
         `;
     });
-
+    
     const invoiceContent = `
         <div class="print-receipt">
             <div class="text-center">
@@ -693,7 +723,7 @@ function generateExternalInvoice() {
             </div>
         </div>
     `;
-
+    
     const printWindow = window.open('', '_blank');
     printWindow.document.write(`
         <html>
@@ -720,12 +750,12 @@ function generatePatientIDCard() {
     const patientId = document.getElementById('patient-fullname').value.trim() ? 
         document.getElementById('appointment-patient-search').value.trim() : 
         null;
-
+    
     if (!patientId) {
         alert("Veuillez d'abord enregistrer ou rechercher un patient!");
         return;
     }
-
+    
     viewPatientCard(patientId);
 }
 
@@ -733,20 +763,20 @@ function generateMedicalCertificate() {
     const patientId = document.getElementById('patient-fullname').value.trim() ? 
         document.getElementById('appointment-patient-search').value.trim() : 
         null;
-
+    
     if (!patientId) {
         alert("Veuillez d'abord enregistrer ou rechercher un patient!");
         return;
     }
-
+    
     const patient = state.patients.find(p => p.id === patientId);
     if (!patient) {
         alert("Patient non trouvé!");
         return;
     }
-
+    
     const consultation = state.consultations.find(c => c.patientId === patientId);
-
+    
     document.getElementById('certificate-hospital-name').textContent = document.getElementById('hospital-name')?.value || 'Hôpital Saint-Luc';
     document.getElementById('certificate-hospital-address').textContent = document.getElementById('hospital-address')?.value || 'Port-au-Prince, Haïti';
     document.getElementById('certificate-hospital-phone').textContent = 'Tél: ' + (document.getElementById('hospital-phone')?.value || '(509) 1234-5678');
@@ -759,11 +789,11 @@ function generateMedicalCertificate() {
     document.getElementById('certificate-date').textContent = new Date().toLocaleDateString('fr-FR');
     document.getElementById('certificate-doctor').textContent = consultation ? consultation.doctor : 'Médecin';
     document.getElementById('certificate-number').textContent = 'CM-' + Date.now().toString().slice(-6);
-
+    
     const container = document.getElementById('medical-certificate-container');
     if (container) {
         container.classList.remove('hidden');
-
+        
         setTimeout(() => {
             window.print();
             container.classList.add('hidden');
@@ -774,10 +804,10 @@ function generateMedicalCertificate() {
 function editPatientRegistration(patientId) {
     const patient = state.patients.find(p => p.id === patientId);
     if (!patient) return;
-
+    
     // Stocker l'ID du patient en cours d'édition
     currentEditingPatientId = patientId;
-
+    
     // Remplir le formulaire avec les données du patient
     document.getElementById('patient-fullname').value = patient.fullName;
     document.getElementById('patient-birthdate').value = patient.birthDate;
@@ -786,11 +816,11 @@ function editPatientRegistration(patientId) {
     document.getElementById('patient-responsible').value = patient.responsible;
     document.getElementById('patient-allergies').value = patient.allergies;
     document.getElementById('patient-notes').value = patient.notes;
-
+    
     // Sélectionner le type de patient
     const typeRadio = document.querySelector(`input[name="patient-type"][value="${patient.type}"]`);
     if (typeRadio) typeRadio.checked = true;
-
+    
     // Charger la consultation existante du patient
     const consultationTransaction = state.transactions.find(t => 
         t.patientId === patientId && 
@@ -802,11 +832,11 @@ function editPatientRegistration(patientId) {
         const select = document.getElementById('consultation-type-secretary');
         if (consultationType) {
             select.value = consultationType.id;
+            // Déclencher l'événement change pour afficher le bouton si nécessaire
+            const changeEvent = new Event('change', { bubbles: true });
+            select.dispatchEvent(changeEvent);
         }
     }
-
-    // Afficher le bouton "Modifier ce type"
-    document.getElementById('modify-consultation-type-btn').classList.remove('hidden');
-
+    
     alert(`Modification du patient ${patient.fullName}. Modifiez les informations et soumettez le formulaire pour enregistrer.`);
 }
