@@ -53,12 +53,28 @@ function setupSecretary() {
         const select = document.getElementById('consultation-type-secretary');
         const selectedOption = select.options[select.selectedIndex];
         if (!selectedOption) return;
-        const typeId = select.value;
-        const type = state.consultationTypes.find(t => t.id == typeId);
-        if (!type) return;
         
-        document.getElementById('modified-consultation-name').value = type.name;
-        document.getElementById('modified-consultation-price').value = type.price;
+        const typeId = select.value;
+        // Chercher d'abord dans les types standards
+        let type = state.consultationTypes.find(t => t.id == typeId);
+        
+        if (type) {
+            // Type standard
+            document.getElementById('modified-consultation-name').value = type.name;
+            document.getElementById('modified-consultation-price').value = type.price;
+        } else {
+            // Type personnalisé : récupérer les valeurs depuis les attributs data
+            const customName = selectedOption.getAttribute('data-name');
+            const customPrice = selectedOption.getAttribute('data-price');
+            if (customName && customPrice) {
+                document.getElementById('modified-consultation-name').value = customName;
+                document.getElementById('modified-consultation-price').value = customPrice;
+            } else {
+                // Fallback : utiliser les valeurs temporaires si disponibles
+                document.getElementById('modified-consultation-name').value = tempModifiedConsultationName || '';
+                document.getElementById('modified-consultation-price').value = tempModifiedConsultationPrice || '';
+            }
+        }
         
         document.getElementById('consultation-modification-secretary').classList.remove('hidden');
     });
@@ -71,6 +87,9 @@ function setupSecretary() {
             alert("Veuillez entrer un nom valide et un prix positif.");
             return;
         }
+        
+        const select = document.getElementById('consultation-type-secretary');
+        const selectedOption = select.options[select.selectedIndex];
         
         if (currentEditingPatientId) {
             // Patient existant : mettre à jour ou créer la transaction immédiatement
@@ -112,10 +131,11 @@ function setupSecretary() {
         }
         
         // Mettre à jour le texte de l'option sélectionnée pour refléter la modification
-        const select = document.getElementById('consultation-type-secretary');
-        const selectedOption = select.options[select.selectedIndex];
         if (selectedOption) {
             selectedOption.text = `${newName} - ${newPrice} Gdes (modifié)`;
+            // Mettre à jour les attributs data si c'est une option personnalisée
+            selectedOption.setAttribute('data-name', newName);
+            selectedOption.setAttribute('data-price', newPrice);
         }
         
         document.getElementById('consultation-modification-secretary').classList.add('hidden');
@@ -142,6 +162,9 @@ function setupSecretary() {
                 const type = state.consultationTypes.find(t => t.id == typeId);
                 if (type) {
                     selectedOption.text = `${type.name} - ${type.price} Gdes`;
+                } else if (selectedOption.hasAttribute('data-original-text')) {
+                    // Restaurer le texte original pour les options personnalisées
+                    selectedOption.text = selectedOption.getAttribute('data-original-text');
                 }
             }
         }
@@ -866,16 +889,40 @@ function editPatientRegistration(patientId) {
         t.patientId === patientId && 
         t.type === 'consultation'
     );
+    
+    const select = document.getElementById('consultation-type-secretary');
+    
     if (consultationTransaction) {
         const serviceName = consultationTransaction.service.replace('Consultation: ', '');
+        const amount = consultationTransaction.amount;
+        
+        // Chercher si ce nom correspond à un type standard
         const consultationType = state.consultationTypes.find(t => t.name === serviceName);
-        const select = document.getElementById('consultation-type-secretary');
+        
         if (consultationType) {
+            // Type standard
             select.value = consultationType.id;
-            // Déclencher l'événement change pour afficher le bouton si nécessaire
-            const changeEvent = new Event('change', { bubbles: true });
-            select.dispatchEvent(changeEvent);
+        } else {
+            // Type personnalisé : créer une option temporaire
+            const customOption = document.createElement('option');
+            const uniqueId = 'custom_' + Date.now();
+            customOption.value = uniqueId;
+            customOption.text = `${serviceName} - ${amount} Gdes (personnalisé)`;
+            customOption.setAttribute('data-name', serviceName);
+            customOption.setAttribute('data-price', amount);
+            customOption.setAttribute('data-original-text', customOption.text); // pour restauration
+            select.appendChild(customOption);
+            select.value = uniqueId;
+            
+            // Marquer que la consultation est personnalisée pour ne pas l'écraser lors de l'enregistrement
+            consultationModifiedForCurrentPatient = true;
+            tempModifiedConsultationName = serviceName;
+            tempModifiedConsultationPrice = amount;
         }
+        
+        // Déclencher l'événement change pour afficher le bouton de modification
+        const changeEvent = new Event('change', { bubbles: true });
+        select.dispatchEvent(changeEvent);
     }
     
     alert(`Modification du patient ${patient.fullName}. Modifiez les informations et soumettez le formulaire pour enregistrer.`);
