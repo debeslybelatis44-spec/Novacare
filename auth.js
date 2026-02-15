@@ -42,6 +42,7 @@ function setupLogin() {
         setupRoleBasedNavigation();
         updateRoleDashboard();
         
+        // Initialisation des composants communs
         updateConsultationTypesSelect();
         updateVitalsInputs();
         updateLabAnalysesSelect();
@@ -53,7 +54,7 @@ function setupLogin() {
         updateDoctorConsultationTypes();
         updateLogoDisplay();
         
-        // Initialiser d'autres modules
+        // Initialiser les modules métier
         if (typeof updateMedicationStock === 'function') updateMedicationStock();
         if (typeof updateMessageRecipients === 'function') updateMessageRecipients();
         if (typeof loadAppointmentsList === 'function') loadAppointmentsList();
@@ -64,9 +65,44 @@ function setupLogin() {
         if (typeof updateAdminExtendedDisplay === 'function') updateAdminExtendedDisplay();
         if (typeof updateUserTransactionTotals === 'function') updateUserTransactionTotals();
         
-        // 🔧 Initialiser le module responsable si le rôle est responsible
+        // Initialiser le module responsable si le rôle est responsible
         if (state.currentRole === 'responsible' && typeof setupResponsible === 'function') {
             setupResponsible();
+        }
+        
+        // Initialiser le module laboratoire si le rôle est lab
+        if (state.currentRole === 'lab' && typeof setupLaboratory === 'function') {
+            setupLaboratory();
+        }
+        
+        // Initialiser le module infirmier si le rôle est nurse
+        if (state.currentRole === 'nurse' && typeof setupNurse === 'function') {
+            setupNurse();
+        }
+        
+        // Initialiser le module médecin si le rôle est doctor
+        if (state.currentRole === 'doctor' && typeof setupDoctor === 'function') {
+            setupDoctor();
+        }
+        
+        // Initialiser le module pharmacie si le rôle est pharmacy
+        if (state.currentRole === 'pharmacy' && typeof setupPharmacy === 'function') {
+            setupPharmacy();
+        }
+        
+        // Initialiser le module caisse si le rôle est cashier
+        if (state.currentRole === 'cashier' && typeof setupCashier === 'function') {
+            setupCashier();
+        }
+        
+        // Initialiser le module secrétariat si le rôle est secretary
+        if (state.currentRole === 'secretary' && typeof setupSecretary === 'function') {
+            setupSecretary();
+        }
+        
+        // Initialiser le module admin si le rôle est admin
+        if (state.currentRole === 'admin' && typeof setupAdmin === 'function') {
+            setupAdmin();
         }
     });
 
@@ -87,7 +123,7 @@ function setupRoleBasedNavigation() {
         if (role === 'admin') {
             tab.classList.remove('hidden');
         } else if (role === 'responsible') {
-            // 🔧 Responsable : seulement dashboard, administration et messagerie
+            // Responsable : seulement dashboard, administration et messagerie
             if (['dashboard', 'administration', 'messaging'].includes(target)) {
                 tab.classList.remove('hidden');
             } else {
@@ -160,7 +196,7 @@ function setupNavigation() {
                 updateConsultationTypesSelect();
                 if (typeof loadAppointmentsList === 'function') loadAppointmentsList();
             } else if (target === 'administration') {
-                // 🔧 Selon le rôle, on appelle les bonnes fonctions de mise à jour
+                // Selon le rôle, on appelle les bonnes fonctions de mise à jour
                 if (state.currentRole === 'responsible') {
                     if (typeof respUpdateAdminDisplay === 'function') respUpdateAdminDisplay();
                 } else {
@@ -178,6 +214,9 @@ function setupNavigation() {
                 if (typeof loadDoctorAppointments === 'function') loadDoctorAppointments();
             } else if (target === 'settings') {
                 if (typeof updateMedicationsSettingsList === 'function') updateMedicationsSettingsList();
+                if (typeof updateSuppliersList === 'function') updateSuppliersList();
+            } else if (target === 'laboratory') {
+                if (typeof updatePendingAnalysesList === 'function') updatePendingAnalysesList();
             }
         });
     });
@@ -190,8 +229,7 @@ function updateRoleDashboard() {
     let html = '';
     
     if (role === 'admin' || role === 'responsible') {
-        // Le tableau de bord est identique pour admin et responsable
-        // (Vous pouvez personnaliser celui du responsable si nécessaire)
+        // Tableau de bord commun (responsable voit les mêmes stats mais sans montants détaillés)
         const totalCredit = Object.values(state.creditAccounts || {}).reduce((sum, acc) => sum + (acc.balance || 0), 0);
         
         html = `
@@ -338,7 +376,7 @@ function updateRoleDashboard() {
                 </div>
                 <div class="stat-card">
                     <div class="stat-icon" style="background:#ffc107"><i class="fas fa-exclamation-triangle"></i></div>
-                    <div class="stat-info"><h3>${state.transactions.filter(t => t.status === 'unpaid').length}</h3><p>Services impayés</p></div>
+                    <div class="stat-info"><h3>${state.transactions.filter(t => t.status === 'unpaid' || t.status === 'hospitalized').length}</h3><p>Services impayés/hospitalisation</p></div>
                 </div>
                 <div class="stat-card clickable-stat" onclick="showSection('messaging')">
                     <div class="stat-icon" style="background:#17a2b8"><i class="fas fa-comments"></i></div>
@@ -521,24 +559,26 @@ function updateRoleDashboard() {
         `;
         
         const urgentContainer = document.getElementById('pending-analyses-list-dashboard');
-        if (pendingAnalyses.length === 0) {
-            urgentContainer.innerHTML = '<p>Aucune analyse en attente.</p>';
-        } else {
-            let urgentHtml = '<table class="table-container"><thead><tr><th>Patient</th><th>Analyse</th><th>Depuis</th></tr></thead><tbody>';
-            
-            pendingAnalyses.slice(0, 5).forEach(analysis => {
-                const hoursAgo = Math.floor((Date.now() - new Date(analysis.date + ' ' + analysis.time)) / (1000 * 60 * 60));
-                urgentHtml += `
-                    <tr>
-                        <td>${analysis.patientName}</td>
-                        <td>${analysis.service}</td>
-                        <td>${hoursAgo} heure(s)</td>
-                    </tr>
-                `;
-            });
-            
-            urgentHtml += '</tbody></table>';
-            urgentContainer.innerHTML = urgentHtml;
+        if (urgentContainer) {
+            if (pendingAnalyses.length === 0) {
+                urgentContainer.innerHTML = '<p>Aucune analyse en attente.</p>';
+            } else {
+                let urgentHtml = '<table class="table-container"><thead><tr><th>Patient</th><th>Analyse</th><th>Depuis</th></tr></thead><tbody>';
+                
+                pendingAnalyses.slice(0, 5).forEach(analysis => {
+                    const hoursAgo = Math.floor((Date.now() - new Date(analysis.date + ' ' + analysis.time)) / (1000 * 60 * 60));
+                    urgentHtml += `
+                        <tr>
+                            <td>${analysis.patientName}</td>
+                            <td>${analysis.service}</td>
+                            <td>${hoursAgo} heure(s)</td>
+                        </tr>
+                    `;
+                });
+                
+                urgentHtml += '</tbody></table>';
+                urgentContainer.innerHTML = urgentHtml;
+            }
         }
     } else if (role === 'pharmacy') {
         const lowStock = state.medicationStock.filter(med => med.quantity <= med.alertThreshold);
@@ -578,25 +618,27 @@ function updateRoleDashboard() {
         `;
         
         const lowStockContainer = document.getElementById('low-stock-dashboard');
-        const outOfStock = lowStock.filter(med => med.quantity === 0);
-        
-        if (outOfStock.length === 0) {
-            lowStockContainer.innerHTML = '<p>Aucun médicament en rupture de stock.</p>';
-        } else {
-            let stockHtml = '<table class="table-container"><thead><tr><th>Médicament</th><th>Forme</th><th>Dernière commande</th></tr></thead><tbody>';
+        if (lowStockContainer) {
+            const outOfStock = lowStock.filter(med => med.quantity === 0);
             
-            outOfStock.slice(0, 5).forEach(med => {
-                stockHtml += `
-                    <tr class="out-of-stock">
-                        <td>${med.name}</td>
-                        <td>${med.form}</td>
-                        <td>Il y a 7 jours</td>
-                    </tr>
-                `;
-            });
-            
-            stockHtml += '</tbody></table>';
-            lowStockContainer.innerHTML = stockHtml;
+            if (outOfStock.length === 0) {
+                lowStockContainer.innerHTML = '<p>Aucun médicament en rupture de stock.</p>';
+            } else {
+                let stockHtml = '<table class="table-container"><thead><tr><th>Médicament</th><th>Forme</th><th>Dernière commande</th></tr></thead><tbody>';
+                
+                outOfStock.slice(0, 5).forEach(med => {
+                    stockHtml += `
+                        <tr class="out-of-stock">
+                            <td>${med.name}</td>
+                            <td>${med.form}</td>
+                            <td>Il y a 7 jours</td>
+                        </tr>
+                    `;
+                });
+                
+                stockHtml += '</tbody></table>';
+                lowStockContainer.innerHTML = stockHtml;
+            }
         }
     }
     

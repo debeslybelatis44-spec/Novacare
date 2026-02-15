@@ -53,28 +53,12 @@ function setupSecretary() {
         const select = document.getElementById('consultation-type-secretary');
         const selectedOption = select.options[select.selectedIndex];
         if (!selectedOption) return;
-        
         const typeId = select.value;
-        // Chercher d'abord dans les types standards
-        let type = state.consultationTypes.find(t => t.id == typeId);
+        const type = state.consultationTypes.find(t => t.id == typeId);
+        if (!type) return;
         
-        if (type) {
-            // Type standard
-            document.getElementById('modified-consultation-name').value = type.name;
-            document.getElementById('modified-consultation-price').value = type.price;
-        } else {
-            // Type personnalisé : récupérer les valeurs depuis les attributs data
-            const customName = selectedOption.getAttribute('data-name');
-            const customPrice = selectedOption.getAttribute('data-price');
-            if (customName && customPrice) {
-                document.getElementById('modified-consultation-name').value = customName;
-                document.getElementById('modified-consultation-price').value = customPrice;
-            } else {
-                // Fallback : utiliser les valeurs temporaires si disponibles
-                document.getElementById('modified-consultation-name').value = tempModifiedConsultationName || '';
-                document.getElementById('modified-consultation-price').value = tempModifiedConsultationPrice || '';
-            }
-        }
+        document.getElementById('modified-consultation-name').value = type.name;
+        document.getElementById('modified-consultation-price').value = type.price;
         
         document.getElementById('consultation-modification-secretary').classList.remove('hidden');
     });
@@ -87,9 +71,6 @@ function setupSecretary() {
             alert("Veuillez entrer un nom valide et un prix positif.");
             return;
         }
-        
-        const select = document.getElementById('consultation-type-secretary');
-        const selectedOption = select.options[select.selectedIndex];
         
         if (currentEditingPatientId) {
             // Patient existant : mettre à jour ou créer la transaction immédiatement
@@ -131,11 +112,10 @@ function setupSecretary() {
         }
         
         // Mettre à jour le texte de l'option sélectionnée pour refléter la modification
+        const select = document.getElementById('consultation-type-secretary');
+        const selectedOption = select.options[select.selectedIndex];
         if (selectedOption) {
             selectedOption.text = `${newName} - ${newPrice} Gdes (modifié)`;
-            // Mettre à jour les attributs data si c'est une option personnalisée
-            selectedOption.setAttribute('data-name', newName);
-            selectedOption.setAttribute('data-price', newPrice);
         }
         
         document.getElementById('consultation-modification-secretary').classList.add('hidden');
@@ -162,9 +142,6 @@ function setupSecretary() {
                 const type = state.consultationTypes.find(t => t.id == typeId);
                 if (type) {
                     selectedOption.text = `${type.name} - ${type.price} Gdes`;
-                } else if (selectedOption.hasAttribute('data-original-text')) {
-                    // Restaurer le texte original pour les options personnalisées
-                    selectedOption.text = selectedOption.getAttribute('data-original-text');
                 }
             }
         }
@@ -199,7 +176,12 @@ function setupSecretary() {
             externalServicesSelection.classList.add('hidden');
         }
     });
+
+    // Démarrer la surveillance des notifications (paiements, résultats labo, délivrances pharmacie)
+    startNotificationWatcher();
 }
+
+// ==================== FONCTIONS EXISTANTES (inchangées) ====================
 
 function updateConsultationTypesSelect() {
     const select = document.getElementById('consultation-type-secretary');
@@ -208,7 +190,6 @@ function updateConsultationTypesSelect() {
     select.innerHTML = '<option value="">Sélectionner...</option>';
     state.consultationTypes.forEach(type => {
         if (type.active) {
-            // Le secrétariat voit les prix
             select.innerHTML += `<option value="${type.id}" data-price="${type.price}">${type.name} - ${type.price} Gdes</option>`;
         }
     });
@@ -267,16 +248,13 @@ function registerPatient(e) {
         return;
     }
     
-    // --- MODIFICATION : Mise à jour du patient existant ou création ---
     let patient;
     if (currentEditingPatientId) {
-        // Mode édition : on récupère le patient existant
         patient = state.patients.find(p => p.id === currentEditingPatientId);
         if (!patient) {
             alert("Erreur : patient introuvable lors de la mise à jour.");
             return;
         }
-        // Mise à jour des champs
         patient.fullName = fullName;
         patient.birthDate = birthDate;
         patient.address = address;
@@ -285,9 +263,7 @@ function registerPatient(e) {
         patient.type = patientType;
         patient.allergies = allergies;
         patient.notes = notes;
-        // On conserve la date d'enregistrement initiale et l'ID
     } else {
-        // Mode création : nouveau patient
         let prefix = 'PAT';
         if (patientType === 'urgence') prefix = 'URG';
         if (patientType === 'pediatrie') prefix = 'PED';
@@ -319,29 +295,24 @@ function registerPatient(e) {
         };
         state.patients.push(patient);
     }
-    // -----------------------------------------------------------------
     
     // Gestion de la transaction de consultation
     if (!externalOnly && consultationTypeId) {
         const consultationType = state.consultationTypes.find(t => t.id == consultationTypeId);
         if (consultationType) {
-            // Chercher une transaction de consultation existante pour ce patient
             let transaction = state.transactions.find(t => 
                 t.patientId === patient.id && 
                 t.type === 'consultation'
             );
             
             if (transaction) {
-                // Si la consultation a été modifiée via le panneau, on ne l'écrase pas
                 if (!consultationModifiedForCurrentPatient) {
-                    // Mise à jour
                     transaction.service = `Consultation: ${consultationType.name}`;
                     transaction.amount = consultationType.price;
                     transaction.date = new Date().toISOString().split('T')[0];
                     transaction.time = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
                 }
             } else {
-                // Création d'une nouvelle transaction
                 let serviceName, amount;
                 if (consultationModifiedForCurrentPatient && tempModifiedConsultationName && tempModifiedConsultationPrice) {
                     serviceName = tempModifiedConsultationName;
@@ -367,9 +338,6 @@ function registerPatient(e) {
             }
             sendNotificationToCashier(transaction);
         }
-    } else {
-        // Si pas de consultation, on peut éventuellement supprimer une transaction existante ?
-        // (comportement à définir selon les besoins)
     }
     
     // Ajouter les services externes sélectionnés
@@ -378,8 +346,6 @@ function registerPatient(e) {
         const serviceId = checkbox.value;
         const service = state.externalServiceTypes.find(s => s.id == serviceId);
         if (service) {
-            // Vérifier si ce service n'a pas déjà été ajouté pour ce patient aujourd'hui ?
-            // Pour simplifier, on crée une nouvelle transaction à chaque fois.
             const transaction = {
                 id: 'EXT' + Date.now(),
                 patientId: patient.id,
@@ -394,6 +360,7 @@ function registerPatient(e) {
                 notificationSent: false
             };
             state.transactions.push(transaction);
+            sendNotificationToCashier(transaction);
         }
     });
     
@@ -402,22 +369,19 @@ function registerPatient(e) {
         : `Patient enregistré avec succès!\nID: ${patient.id}`
     );
     
-    // Réinitialiser le formulaire et l'état d'édition
+    // Réinitialiser le formulaire
     e.target.reset();
     document.getElementById('external-services-selection').classList.add('hidden');
     document.getElementById('consultation-type-container').classList.remove('hidden');
     document.getElementById('external-only').checked = false;
-    document.getElementById('consultation-type-secretary').value = ''; // reset select
-    // Cacher le bouton de modification et le panneau
+    document.getElementById('consultation-type-secretary').value = '';
     document.getElementById('modify-consultation-type-btn').classList.add('hidden');
     document.getElementById('consultation-modification-secretary').classList.add('hidden');
-    currentEditingPatientId = null; // sortir du mode édition
-    // Réinitialiser les variables temporaires
+    currentEditingPatientId = null;
     tempModifiedConsultationName = null;
     tempModifiedConsultationPrice = null;
-    consultationModifiedForCurrentPatient = false; // réinitialiser l'indicateur
+    consultationModifiedForCurrentPatient = false;
     
-    // Mettre à jour les listes
     updateTodayPatientsList();
     if (typeof updateRoleDashboard === 'function') updateRoleDashboard();
     if (typeof updateAdminStats === 'function') updateAdminStats();
@@ -438,15 +402,11 @@ function searchAppointmentPatient() {
     document.getElementById('appointment-patient-name').textContent = `${patient.fullName} (${patient.id})`;
     document.getElementById('appointment-patient-details').classList.remove('hidden');
     
-    // Définir la date par défaut à demain
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
     document.getElementById('appointment-date').value = tomorrow.toISOString().split('T')[0];
-    
-    // Définir l'heure par défaut à 09:00
     document.getElementById('appointment-time').value = '09:00';
     
-    // Charger les médecins
     loadDoctorsForAppointments();
 }
 
@@ -495,7 +455,6 @@ function scheduleAppointment() {
     
     alert("Rendez-vous programmé avec succès!");
     
-    // Réinitialiser
     document.getElementById('appointment-patient-search').value = '';
     document.getElementById('appointment-date').value = '';
     document.getElementById('appointment-time').value = '';
@@ -503,7 +462,6 @@ function scheduleAppointment() {
     document.getElementById('appointment-doctor').selectedIndex = 0;
     document.getElementById('appointment-patient-details').classList.add('hidden');
     
-    // Mettre à jour la liste
     loadAppointmentsList();
 }
 
@@ -865,13 +823,11 @@ function editPatientRegistration(patientId) {
     const patient = state.patients.find(p => p.id === patientId);
     if (!patient) return;
     
-    // Stocker l'ID du patient en cours d'édition
     currentEditingPatientId = patientId;
-    consultationModifiedForCurrentPatient = false; // Réinitialiser pour ce patient
+    consultationModifiedForCurrentPatient = false;
     tempModifiedConsultationName = null;
     tempModifiedConsultationPrice = null;
     
-    // Remplir le formulaire avec les données du patient
     document.getElementById('patient-fullname').value = patient.fullName;
     document.getElementById('patient-birthdate').value = patient.birthDate;
     document.getElementById('patient-address').value = patient.address;
@@ -880,50 +836,92 @@ function editPatientRegistration(patientId) {
     document.getElementById('patient-allergies').value = patient.allergies;
     document.getElementById('patient-notes').value = patient.notes;
     
-    // Sélectionner le type de patient
     const typeRadio = document.querySelector(`input[name="patient-type"][value="${patient.type}"]`);
     if (typeRadio) typeRadio.checked = true;
     
-    // Charger la consultation existante du patient
     const consultationTransaction = state.transactions.find(t => 
         t.patientId === patientId && 
         t.type === 'consultation'
     );
-    
-    const select = document.getElementById('consultation-type-secretary');
-    
     if (consultationTransaction) {
         const serviceName = consultationTransaction.service.replace('Consultation: ', '');
-        const amount = consultationTransaction.amount;
-        
-        // Chercher si ce nom correspond à un type standard
         const consultationType = state.consultationTypes.find(t => t.name === serviceName);
-        
+        const select = document.getElementById('consultation-type-secretary');
         if (consultationType) {
-            // Type standard
             select.value = consultationType.id;
-        } else {
-            // Type personnalisé : créer une option temporaire
-            const customOption = document.createElement('option');
-            const uniqueId = 'custom_' + Date.now();
-            customOption.value = uniqueId;
-            customOption.text = `${serviceName} - ${amount} Gdes (personnalisé)`;
-            customOption.setAttribute('data-name', serviceName);
-            customOption.setAttribute('data-price', amount);
-            customOption.setAttribute('data-original-text', customOption.text); // pour restauration
-            select.appendChild(customOption);
-            select.value = uniqueId;
-            
-            // Marquer que la consultation est personnalisée pour ne pas l'écraser lors de l'enregistrement
-            consultationModifiedForCurrentPatient = true;
-            tempModifiedConsultationName = serviceName;
-            tempModifiedConsultationPrice = amount;
+            const changeEvent = new Event('change', { bubbles: true });
+            select.dispatchEvent(changeEvent);
         }
-        
-        // Déclencher l'événement change pour afficher le bouton de modification
-        const changeEvent = new Event('change', { bubbles: true });
-        select.dispatchEvent(changeEvent);
     }
     
     alert(`Modification du patient ${patient.fullName}. Modifiez les informations et soumettez le formulaire pour enregistrer.`);
 }
+
+// ==================== FONCTIONS DE NOTIFICATION ====================
+
+function showNotification(message, type = 'info') {
+    const toast = document.createElement('div');
+    toast.className = `toast-notification ${type}`;
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    
+    try {
+        const audio = new Audio('data:audio/wav;base64,UklGRlwAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YVQAAABJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJ');
+        audio.volume = 0.3;
+        audio.play().catch(e => console.log('Son bloqué par le navigateur'));
+    } catch (e) {}
+    
+    setTimeout(() => {
+        toast.remove();
+    }, 4000);
+}
+
+function startNotificationWatcher() {
+    setInterval(checkNewNotifications, 10000);
+    checkNewNotifications();
+}
+
+function checkNewNotifications() {
+    if (!state.currentUser || state.currentUser.role !== 'secretary') return;
+    
+    // Messages de paiement
+    const paymentMessages = state.messages.filter(m => 
+        m.recipient === state.currentUser.username &&
+        m.type === 'payment_notification' &&
+        !m.read
+    );
+    paymentMessages.forEach(msg => {
+        showNotification(`Paiement: ${msg.content}`, 'success');
+        msg.read = true;
+    });
+    
+    // Messages de résultats labo
+    const labMessages = state.messages.filter(m => 
+        m.recipient === state.currentUser.username &&
+        m.type === 'lab_result' &&
+        !m.read
+    );
+    labMessages.forEach(msg => {
+        showNotification(`Résultat labo: ${msg.content}`, 'info');
+        msg.read = true;
+    });
+    
+    // Messages de délivrance pharmacie (si implémenté)
+    const pharmacyMessages = state.messages.filter(m => 
+        m.recipient === state.currentUser.username &&
+        m.type === 'pharmacy_delivery' &&
+        !m.read
+    );
+    pharmacyMessages.forEach(msg => {
+        showNotification(`Pharmacie: ${msg.content}`, 'info');
+        msg.read = true;
+    });
+    
+    updateMessageBadge();
+}
+
+// Rendre les fonctions globales accessibles
+window.cancelAppointment = cancelAppointment;
+window.rescheduleAppointment = rescheduleAppointment;
+window.deleteExternalService = deleteExternalService;
+window.editPatientRegistration = editPatientRegistration;

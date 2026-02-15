@@ -79,8 +79,16 @@ function setupPharmacy() {
     
     // Initialiser l'affichage du stock
     updateMedicationStock();
+    
+    // Mettre à jour la liste des fournisseurs dans le formulaire
+    updateSupplierSelect();
+    
+    // === NOUVEAU : Vente directe ===
+    document.getElementById('add-direct-sale')?.addEventListener('click', addDirectSaleItem);
+    document.getElementById('confirm-direct-sale')?.addEventListener('click', confirmDirectSale);
 }
 
+// -------------------- Recherche patient --------------------
 function searchPatient() {
     const searchInput = document.getElementById('pharmacy-patient-search');
     if (!searchInput) return;
@@ -181,6 +189,7 @@ function displayPatientDetails(patient) {
     document.getElementById('deliver-medications').disabled = !hasDeliverable;
 }
 
+// -------------------- Stock --------------------
 function searchMedicationInStock() {
     const searchInput = document.getElementById('medication-search-stock');
     if (!searchInput) return;
@@ -194,9 +203,9 @@ function searchMedicationInStock() {
     
     const filteredMeds = state.medicationStock.filter(med => 
         med.name.toLowerCase().includes(searchValue) ||
-        med.genericName.toLowerCase().includes(searchValue) ||
-        med.department.toLowerCase().includes(searchValue) ||
-        med.form.toLowerCase().includes(searchValue)
+        (med.genericName && med.genericName.toLowerCase().includes(searchValue)) ||
+        (med.department && med.department.toLowerCase().includes(searchValue)) ||
+        (med.form && med.form.toLowerCase().includes(searchValue))
     );
     
     displayFilteredMedications(filteredMeds);
@@ -243,7 +252,6 @@ function displayFilteredMedications(medications) {
             const expDate = new Date(med.expirationDate);
             expirationDisplay = expDate.toLocaleDateString('fr-FR');
             
-            // Ajouter un avertissement si expiré ou bientôt expiré
             const diffTime = expDate - today;
             const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
             
@@ -254,16 +262,24 @@ function displayFilteredMedications(medications) {
             }
         }
         
+        // Récupérer le nom du fournisseur
+        let supplierName = '-';
+        if (med.supplier) {
+            const supplier = state.suppliers.find(s => s.id === med.supplier);
+            supplierName = supplier ? supplier.name : 'Inconnu';
+        }
+        
         html += `
             <tr class="${statusClass}">
-                <td>${med.name}<br><small>${med.genericName}</small></td>
+                <td>${med.name}<br><small>${med.genericName || ''}</small></td>
                 <td>${med.form}</td>
-                <td>${med.department}</td>
+                <td>${med.department || '-'}</td>
                 <td>${med.quantity} ${med.unit}</td>
                 <td>${med.alertThreshold} ${med.unit}</td>
                 <td>${med.price.toFixed(2)} Gdes</td>
                 <td>${expirationDisplay}</td>
-                <td>${med.location}</td>
+                <td>${supplierName}</td>
+                <td>${med.location || '-'}</td>
                 <td>${statusText}</td>
                 <td>
                     <button class="btn btn-sm btn-warning" onclick="restockMedication('${med.id}')">
@@ -277,7 +293,7 @@ function displayFilteredMedications(medications) {
         `;
     });
     
-    container.innerHTML = html || '<tr><td colspan="10" class="text-center">Aucun médicament trouvé</td></tr>';
+    container.innerHTML = html || '<tr><td colspan="11" class="text-center">Aucun médicament trouvé</td></tr>';
     
     updateLowStockMedications();
     updateExpiringMedications();
@@ -373,6 +389,16 @@ function updateLocationOptions(department) {
     }
 }
 
+function updateSupplierSelect() {
+    const select = document.getElementById('new-med-supplier');
+    if (!select) return;
+    
+    select.innerHTML = '<option value="">Fournisseur</option>';
+    state.suppliers.forEach(supplier => {
+        select.innerHTML += `<option value="${supplier.id}">${supplier.name} (${supplier.type === 'credit' ? 'Crédit' : 'Comptant'})</option>`;
+    });
+}
+
 function deliverMedication(transactionId) {
     const transaction = state.transactions.find(t => t.id === transactionId);
     if (!transaction) {
@@ -423,6 +449,8 @@ function resetNewMedicationForm() {
     document.getElementById('new-med-expiration').value = '';
     document.getElementById('new-med-location').selectedIndex = 0;
     document.getElementById('new-med-department').selectedIndex = 0;
+    document.getElementById('new-med-supplier').selectedIndex = 0;
+    document.getElementById('new-med-purchase-type').value = 'cash';
 }
 
 function addNewMedication() {
@@ -436,6 +464,8 @@ function addNewMedication() {
     const expirationDate = document.getElementById('new-med-expiration').value;
     const location = document.getElementById('new-med-location').value;
     const department = document.getElementById('new-med-department').value;
+    const supplier = document.getElementById('new-med-supplier').value;
+    const purchaseType = document.getElementById('new-med-purchase-type').value;
     
     if (!name || !form || !unit || isNaN(quantity) || isNaN(alertThreshold) || isNaN(price) || !location || !department) {
         alert("Veuillez remplir tous les champs obligatoires!");
@@ -497,6 +527,8 @@ function addNewMedication() {
         expirationDate: expirationDate || null,
         location: location,
         department: department,
+        supplier: supplier ? parseInt(supplier) : null,
+        purchaseType: purchaseType,
         reserved: 0,
         addedDate: new Date().toISOString().split('T')[0],
         addedBy: state.currentUser.username
@@ -552,7 +584,6 @@ function updateMedicationStock() {
             const expDate = new Date(med.expirationDate);
             expirationDisplay = expDate.toLocaleDateString('fr-FR');
             
-            // Ajouter un avertissement si expiré ou bientôt expiré
             const diffTime = expDate - today;
             const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
             
@@ -563,16 +594,24 @@ function updateMedicationStock() {
             }
         }
         
+        // Récupérer le nom du fournisseur
+        let supplierName = '-';
+        if (med.supplier) {
+            const supplier = state.suppliers.find(s => s.id === med.supplier);
+            supplierName = supplier ? supplier.name : 'Inconnu';
+        }
+        
         html += `
             <tr class="${statusClass}">
-                <td>${med.name}<br><small>${med.genericName}</small></td>
+                <td>${med.name}<br><small>${med.genericName || ''}</small></td>
                 <td>${med.form}</td>
-                <td>${med.department}</td>
+                <td>${med.department || '-'}</td>
                 <td>${med.quantity} ${med.unit}</td>
                 <td>${med.alertThreshold} ${med.unit}</td>
                 <td>${med.price.toFixed(2)} Gdes</td>
                 <td>${expirationDisplay}</td>
-                <td>${med.location}</td>
+                <td>${supplierName}</td>
+                <td>${med.location || '-'}</td>
                 <td>${statusText}</td>
                 <td>
                     <button class="btn btn-sm btn-warning" onclick="restockMedication('${med.id}')">
@@ -733,7 +772,7 @@ function editMedication(medId) {
             </div>
             <div class="form-group">
                 <label>Nom générique:</label>
-                <input type="text" id="edit-med-generic" class="form-control" value="${med.genericName}">
+                <input type="text" id="edit-med-generic" class="form-control" value="${med.genericName || ''}">
             </div>
             <div class="form-group">
                 <label>Forme:</label>
@@ -747,6 +786,19 @@ function editMedication(medId) {
                 <label>Département:</label>
                 <select id="edit-med-department" class="form-control">
                     ${getDepartmentOptions(med.department)}
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Fournisseur:</label>
+                <select id="edit-med-supplier" class="form-control">
+                    ${getSupplierOptions(med.supplier)}
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Type d'achat:</label>
+                <select id="edit-med-purchase-type" class="form-control">
+                    <option value="cash" ${med.purchaseType === 'cash' ? 'selected' : ''}>Comptant</option>
+                    <option value="credit" ${med.purchaseType === 'credit' ? 'selected' : ''}>Crédit</option>
                 </select>
             </div>
             <div class="form-group">
@@ -815,6 +867,14 @@ function getDepartmentOptions(selected) {
     return departments.map(dept => 
         `<option value="${dept}" ${dept === selected ? 'selected' : ''}>${dept}</option>`
     ).join('');
+}
+
+function getSupplierOptions(selectedSupplierId) {
+    let options = '<option value="">Aucun</option>';
+    state.suppliers.forEach(s => {
+        options += `<option value="${s.id}" ${s.id === selectedSupplierId ? 'selected' : ''}>${s.name} (${s.type})</option>`;
+    });
+    return options;
 }
 
 function getLocationOptions(department, selectedLocation) {
@@ -887,6 +947,8 @@ function saveMedicationEdit(medId) {
     med.expirationDate = document.getElementById('edit-med-expiration').value || null;
     med.location = newLocation;
     med.department = newDepartment;
+    med.supplier = document.getElementById('edit-med-supplier').value ? parseInt(document.getElementById('edit-med-supplier').value) : null;
+    med.purchaseType = document.getElementById('edit-med-purchase-type').value;
     med.lastModified = new Date().toISOString().split('T')[0];
     med.modifiedBy = state.currentUser.username;
     
@@ -894,3 +956,140 @@ function saveMedicationEdit(medId) {
     document.getElementById('edit-medication-modal').remove();
     updateMedicationStock();
 }
+
+// ==================== VENTE DIRECTE ====================
+let directSaleItems = []; // tableau des objets { medId, name, quantity, price, total }
+
+function addDirectSaleItem() {
+    const searchInput = document.getElementById('direct-sale-med-name');
+    const medName = searchInput.value.trim().toLowerCase();
+    const quantity = parseInt(document.getElementById('direct-sale-quantity').value);
+    
+    if (!medName || !quantity || quantity <= 0) {
+        alert("Veuillez saisir un nom de médicament et une quantité valide.");
+        return;
+    }
+    
+    // Chercher le médicament par nom (insensible à la casse)
+    const med = state.medicationStock.find(m => 
+        m.name.toLowerCase().includes(medName) || 
+        (m.genericName && m.genericName.toLowerCase().includes(medName))
+    );
+    
+    if (!med) {
+        alert("Médicament non trouvé dans le stock.");
+        return;
+    }
+    
+    if (quantity > med.quantity) {
+        alert(`Stock insuffisant. Disponible: ${med.quantity} ${med.unit}`);
+        return;
+    }
+    
+    // Vérifier si déjà dans la liste
+    const existing = directSaleItems.find(item => item.medId === med.id);
+    if (existing) {
+        existing.quantity += quantity;
+        existing.total = existing.quantity * existing.price;
+    } else {
+        directSaleItems.push({
+            medId: med.id,
+            name: med.name,
+            quantity: quantity,
+            price: med.price,
+            total: quantity * med.price
+        });
+    }
+    
+    updateDirectSaleDisplay();
+    searchInput.value = '';
+    document.getElementById('direct-sale-quantity').value = '';
+}
+
+function updateDirectSaleDisplay() {
+    const container = document.getElementById('direct-sale-items');
+    if (!container) return;
+    
+    let html = '<table class="table-container"><thead><tr><th>Médicament</th><th>Quantité</th><th>Prix unitaire</th><th>Total</th><th>Action</th></tr></thead><tbody>';
+    let total = 0;
+    directSaleItems.forEach((item, index) => {
+        total += item.total;
+        html += `<tr>
+            <td>${item.name}</td>
+            <td>${item.quantity}</td>
+            <td>${item.price} Gdes</td>
+            <td>${item.total} Gdes</td>
+            <td><button class="btn btn-sm btn-danger" onclick="removeDirectSaleItem(${index})">Supprimer</button></td>
+        </tr>`;
+    });
+    html += '</tbody></table>';
+    container.innerHTML = html || '<p>Aucun article ajouté.</p>';
+    document.getElementById('direct-sale-total').textContent = total;
+}
+
+function removeDirectSaleItem(index) {
+    directSaleItems.splice(index, 1);
+    updateDirectSaleDisplay();
+}
+
+function confirmDirectSale() {
+    if (directSaleItems.length === 0) {
+        alert("Aucun article à vendre.");
+        return;
+    }
+    
+    // Calculer le total
+    const totalAmount = directSaleItems.reduce((sum, item) => sum + item.total, 0);
+    
+    // Créer un patient temporaire "Vente directe" (ID généré)
+    const tempPatientId = 'DIRECT-' + Date.now();
+    const tempPatientName = 'Vente directe (sans dossier)';
+    
+    // Créer une transaction pour chaque article (ou une seule avec le total)
+    // Pour simplifier, on crée une transaction unique avec le total
+    const transaction = {
+        id: 'TR' + Date.now(),
+        patientId: tempPatientId,
+        patientName: tempPatientName,
+        service: 'Vente directe de médicaments',
+        amount: totalAmount,
+        status: 'unpaid',
+        date: new Date().toISOString().split('T')[0],
+        time: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
+        createdBy: state.currentUser.username,
+        type: 'medication',
+        isDirectSale: true,
+        items: directSaleItems.map(item => ({ ...item })), // copie
+        notificationSent: false
+    };
+    
+    state.transactions.push(transaction);
+    
+    // Réserver les quantités (optionnel, on pourrait aussi les déduire immédiatement si on veut, mais généralement on attend le paiement)
+    directSaleItems.forEach(item => {
+        const med = state.medicationStock.find(m => m.id === item.medId);
+        if (med) {
+            med.reserved = (med.reserved || 0) + item.quantity;
+        }
+    });
+    
+    // Notifier la caisse
+    sendNotificationToCashier(transaction);
+    
+    // Afficher un message avec le numéro de transaction
+    alert(`Vente enregistrée. Transaction #${transaction.id} créée pour ${totalAmount} Gdes. Le client doit payer à la caisse.`);
+    
+    // Réinitialiser
+    directSaleItems = [];
+    updateDirectSaleDisplay();
+    
+    // Rafraîchir le stock (affichage)
+    updateMedicationStock();
+}
+
+// Rendre accessible globalement
+window.deliverMedication = deliverMedication;
+window.restockMedication = restockMedication;
+window.editMedication = editMedication;
+window.saveMedicationEdit = saveMedicationEdit;
+window.removeDirectSaleItem = removeDirectSaleItem;

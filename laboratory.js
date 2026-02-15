@@ -87,11 +87,15 @@ function setupLaboratory() {
         updatePendingAnalysesList();
     });
     
+    // Ajouter un écouteur d'événement pour la touche Enter
     document.getElementById('lab-patient-search').addEventListener('keypress', (e) => {
         if (e.key === 'Enter') {
             document.getElementById('search-lab-patient').click();
         }
     });
+    
+    // Initialiser la liste des analyses en attente
+    updatePendingAnalysesList();
 }
 
 function enterLabResult(transactionId) {
@@ -160,6 +164,7 @@ function saveLabResult(transactionId, type) {
             transaction.labStatus = 'completed';
             
             sendLabResultNotification(transaction);
+            showNotification(`Résultat enregistré pour ${transaction.patientName}`, 'success');
             
             alert("Résultat enregistré avec succès!");
             document.getElementById('lab-result-modal').remove();
@@ -172,6 +177,7 @@ function saveLabResult(transactionId, type) {
     transaction.labStatus = 'completed';
     
     sendLabResultNotification(transaction);
+    showNotification(`Résultat enregistré pour ${transaction.patientName}`, 'success');
     
     alert("Résultat enregistré avec succès!");
     document.getElementById('lab-result-modal').remove();
@@ -179,6 +185,7 @@ function saveLabResult(transactionId, type) {
 }
 
 function sendLabResultNotification(transaction) {
+    // Notifier tous les médecins
     const doctors = state.users.filter(u => u.role === 'doctor' && u.active);
     doctors.forEach(doctor => {
         const message = {
@@ -195,6 +202,25 @@ function sendLabResultNotification(transaction) {
         };
         state.messages.push(message);
     });
+    
+    // Notifier également le secrétariat (optionnel)
+    const secretaries = state.users.filter(u => u.role === 'secretary' && u.active);
+    secretaries.forEach(sec => {
+        const message = {
+            id: 'MSG' + Date.now(),
+            sender: state.currentUser.username,
+            senderRole: state.currentRole,
+            recipient: sec.username,
+            recipientRole: sec.role,
+            subject: 'Résultat d\'analyse disponible',
+            content: `Résultat disponible pour le patient ${transaction.patientName}: ${transaction.service}`,
+            timestamp: new Date().toISOString(),
+            read: false,
+            type: 'lab_result'
+        };
+        state.messages.push(message);
+    });
+    
     updateMessageBadge();
 }
 
@@ -262,9 +288,32 @@ function updatePendingAnalysesList() {
     container.innerHTML = html;
 }
 
+// Fonction utilitaire pour afficher une notification toast (copiée depuis doctor.js pour cohérence)
+function showNotification(message, type = 'info') {
+    const toast = document.createElement('div');
+    toast.className = `toast-notification ${type}`;
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    
+    try {
+        const audio = new Audio('data:audio/wav;base64,UklGRlwAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YVQAAABJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJ');
+        audio.volume = 0.3;
+        audio.play().catch(e => console.log('Son bloqué par le navigateur'));
+    } catch (e) {}
+    
+    setTimeout(() => {
+        toast.remove();
+    }, 4000);
+}
+
 // Initialisation du module laboratoire
 document.addEventListener('DOMContentLoaded', () => {
     if (document.getElementById('lab-patient-search')) {
         setupLaboratory();
     }
 });
+
+// Rendre les fonctions accessibles globalement (pour les appels onclick)
+window.enterLabResult = enterLabResult;
+window.saveLabResult = saveLabResult;
+window.viewLabResult = viewLabResult;

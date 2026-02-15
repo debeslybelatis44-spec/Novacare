@@ -149,9 +149,8 @@
                                 <select id="consultation-type-secretary" class="form-control" required>
                                     <option value="">Sélectionner...</option>
                                 </select>
-                                <!-- Bouton pour modifier la consultation du patient en cours -->
-                                <button type="button" id="modify-current-consultation-btn" class="btn btn-warning btn-sm mt-2">
-                                    <i class="fas fa-edit"></i> Modifier la consultation
+                                <button type="button" id="modify-consultation-type-btn" class="btn btn-warning btn-sm mt-2 modify-consultation-btn hidden">
+                                    <i class="fas fa-edit"></i> Modifier ce type
                                 </button>
                             </div>
                         </div>
@@ -570,6 +569,7 @@
                             <div style="flex:1">
                                 <p><strong>Type:</strong> <span id="doctor-patient-type"></span></p>
                                 <p><strong>Statut paiement:</strong> <span id="doctor-payment-status" class="patient-status-badge"></span></p>
+                                <p><strong>Hospitalisé:</strong> <span id="doctor-hospitalized-status">Non</span></p>
                                 <p><strong>Notes:</strong> <span id="doctor-patient-notes">Aucune</span></p>
                             </div>
                         </div>
@@ -676,6 +676,13 @@
                                         <input type="date" id="followup-date" class="form-control">
                                         <input type="time" id="followup-time" class="form-control">
                                     </div>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label class="form-label">
+                                        <input type="checkbox" id="hospitalize-patient"> Hospitaliser le patient
+                                    </label>
+                                    <small class="text-muted">Si coché, les services seront comptabilisés mais facturés en fin d'hospitalisation.</small>
                                 </div>
                                 
                                 <div class="d-flex" style="gap:15px;">
@@ -793,6 +800,15 @@
                             <input type="date" id="new-med-expiration" class="form-control" placeholder="Date d'expiration">
                         </div>
                         <div class="d-flex" style="gap:10px; margin-bottom: 10px;">
+                            <select id="new-med-supplier" class="form-control">
+                                <option value="">Fournisseur</option>
+                            </select>
+                            <select id="new-med-purchase-type" class="form-control">
+                                <option value="cash">Achat comptant</option>
+                                <option value="credit">Achat à crédit</option>
+                            </select>
+                        </div>
+                        <div class="d-flex" style="gap:10px; margin-bottom: 10px;">
                             <select id="new-med-location" class="form-control">
                                 <option value="">Sélectionner un emplacement</option>
                             </select>
@@ -817,6 +833,7 @@
                                     <th>Seuil alerte</th>
                                     <th>Prix unitaire</th>
                                     <th>Expiration</th>
+                                    <th>Fournisseur</th>
                                     <th>Emplacement</th>
                                     <th>Statut</th>
                                     <th>Actions</th>
@@ -834,6 +851,21 @@
                     <div class="mt-3">
                         <h4><i class="fas fa-calendar-times"></i> Médicaments bientôt expirés ou expirés</h4>
                         <div id="expiring-medications"></div>
+                    </div>
+                </div>
+                
+                <!-- Nouveau : Vente directe de médicaments -->
+                <div class="card mt-3">
+                    <h3><i class="fas fa-cart-plus"></i> Vente directe (sans prescription)</h3>
+                    <div class="d-flex" style="gap:10px; margin-bottom:10px;">
+                        <input type="text" id="direct-sale-med-name" class="form-control" placeholder="Rechercher médicament">
+                        <input type="number" id="direct-sale-quantity" class="form-control" placeholder="Quantité" min="1">
+                        <button id="add-direct-sale" class="btn btn-primary">Ajouter à la vente</button>
+                    </div>
+                    <div id="direct-sale-items"></div>
+                    <div class="mt-2">
+                        <p>Total: <span id="direct-sale-total">0</span> Gdes</p>
+                        <button id="confirm-direct-sale" class="btn btn-success">Générer facture et notifier caisse</button>
                     </div>
                 </div>
             </section>
@@ -954,7 +986,7 @@
                     <h3><i class="fas fa-cash-register"></i> Gestion des Caisses</h3>
                     <div class="d-flex" style="gap:20px; margin-bottom:15px;">
                         <div class="caisse-info">
-                            <h5>Caisse Principale</h5>
+                            <h5>Caisse Principale (tous modes)</h5>
                             <h2 id="main-cash-balance">0 Gdes</h2>
                             <p>Solde total</p>
                         </div>
@@ -962,6 +994,28 @@
                             <h5>Petite Caisse</h5>
                             <h2 id="petty-cash-balance">0 Gdes</h2>
                             <p>Solde disponible</p>
+                        </div>
+                    </div>
+                    <div class="d-flex" style="gap:10px; flex-wrap:wrap;">
+                        <div class="caisse-info" style="min-width:120px;">
+                            <h5>Espèces</h5>
+                            <h3 id="cash-balance">0</h3>
+                        </div>
+                        <div class="caisse-info" style="min-width:120px;">
+                            <h5>MonCash</h5>
+                            <h3 id="moncash-balance">0</h3>
+                        </div>
+                        <div class="caisse-info" style="min-width:120px;">
+                            <h5>NatCash</h5>
+                            <h3 id="natcash-balance">0</h3>
+                        </div>
+                        <div class="caisse-info" style="min-width:120px;">
+                            <h5>Carte</h5>
+                            <h3 id="card-balance">0</h3>
+                        </div>
+                        <div class="caisse-info" style="min-width:120px;">
+                            <h5>Externe</h5>
+                            <h3 id="external-balance">0</h3>
                         </div>
                     </div>
                     <div class="d-flex" style="gap:15px;">
@@ -1000,6 +1054,33 @@
                     <div class="mt-3">
                         <button id="generate-user-report-btn" class="btn btn-warning">Rapport Utilisateurs</button>
                         <button onclick="printReport()" class="btn btn-secondary">Imprimer Rapport</button>
+                    </div>
+                </div>
+                
+                <!-- Nouveau : Paiement des employés -->
+                <div class="card">
+                    <h3><i class="fas fa-user-tag"></i> Paiement des employés</h3>
+                    <div class="d-flex" style="gap:15px; margin-bottom:15px;">
+                        <select id="employee-select" class="form-control">
+                            <option value="">Choisir un employé</option>
+                        </select>
+                        <select id="employee-payment-method" class="form-control">
+                            <option value="cash">Espèces</option>
+                            <option value="moncash">MonCash</option>
+                            <option value="natcash">NatCash</option>
+                            <option value="card">Carte</option>
+                            <option value="external">Externe</option>
+                        </select>
+                        <input type="number" id="employee-payment-amount" class="form-control" placeholder="Montant">
+                        <button id="pay-employee-btn" class="btn btn-success">Payer</button>
+                    </div>
+                    <div class="table-container">
+                        <table>
+                            <thead>
+                                <tr><th>Employé</th><th>Montant</th><th>Date</th><th>Mode</th></tr>
+                            </thead>
+                            <tbody id="employee-payments-history"></tbody>
+                        </table>
                     </div>
                 </div>
                 
@@ -1213,6 +1294,28 @@
                         <button type="button" id="add-external-service-type" class="btn btn-success">
                             <i class="fas fa-plus"></i> Ajouter
                         </button>
+                    </div>
+                </div>
+                
+                <!-- Nouveau : Fournisseurs -->
+                <div class="card">
+                    <h3><i class="fas fa-truck"></i> Fournisseurs</h3>
+                    <div class="d-flex" style="gap:15px; margin-top:15px;">
+                        <input type="text" id="new-supplier-name" class="form-control" placeholder="Nom">
+                        <select id="new-supplier-type" class="form-control">
+                            <option value="cash">Comptant</option>
+                            <option value="credit">Crédit</option>
+                        </select>
+                        <input type="text" id="new-supplier-contact" class="form-control" placeholder="Contact">
+                        <button type="button" id="add-supplier" class="btn btn-success">Ajouter</button>
+                    </div>
+                    <div class="table-container mt-3">
+                        <table>
+                            <thead>
+                                <tr><th>Nom</th><th>Type</th><th>Contact</th><th>Actions</th></tr>
+                            </thead>
+                            <tbody id="suppliers-list"></tbody>
+                        </table>
                     </div>
                 </div>
                 
