@@ -35,6 +35,11 @@ function setupAdmin() {
     
     // NOUVELLES FONCTIONNALITÉS ADMINISTRATION
     setupAdminExtended();
+    
+    // Paiement des employés
+    document.getElementById('pay-employee-btn')?.addEventListener('click', payEmployee);
+    updateEmployeeSelect();
+    updateEmployeePaymentsHistory();
 }
 
 function searchAdminPatient() {
@@ -66,6 +71,10 @@ function searchAdminPatient() {
     
     document.getElementById('admin-patient-name').textContent = patient.fullName + ' (' + patient.id + ')';
     document.getElementById('admin-patient-details').classList.remove('hidden');
+    
+    // Remplir les notes
+    document.getElementById('patient-allergies-admin').value = patient.allergies || '';
+    document.getElementById('patient-notes-admin').value = patient.notes || '';
     
     const privilegeSelect = document.getElementById('privilege-type');
     const discountSection = document.getElementById('discount-section');
@@ -107,7 +116,7 @@ function searchAdminPatient() {
                 <td>${t.status}</td>
                 <td>${t.type}</td>
                 <td>
-                    <button class="btn btn-sm btn-warning" onclick="openEditTransactionModal('${t.id}')">Sélectionner</button>
+                    <button class="btn btn-sm btn-warning" onclick="selectTransactionForEdit('${t.id}')">Sélectionner</button>
                 </td>
             </tr>`;
         });
@@ -117,19 +126,18 @@ function searchAdminPatient() {
     
     // Afficher le crédit du patient
     updateCreditDisplay(patientId);
+}
 
-    // Bouton d'impression de la fiche patient
-    let printBtn = document.getElementById('print-patient-sheet-btn');
-    if (!printBtn) {
-        printBtn = document.createElement('button');
-        printBtn.id = 'print-patient-sheet-btn';
-        printBtn.className = 'btn btn-info mt-2';
-        printBtn.innerHTML = '<i class="fas fa-print"></i> Imprimer la fiche du patient';
-        printBtn.onclick = () => printPatientTransactions(patient.id);
-        document.getElementById('admin-patient-details').appendChild(printBtn);
-    } else {
-        printBtn.onclick = () => printPatientTransactions(patient.id);
-    }
+function savePatientNotes() {
+    const patientId = document.getElementById('admin-patient-search').value.trim();
+    const patient = state.patients.find(p => p.id === patientId);
+    if (!patient) return;
+    
+    patient.allergies = document.getElementById('patient-allergies-admin').value;
+    patient.notes = document.getElementById('patient-notes-admin').value;
+    
+    alert("Notes du patient mises à jour !");
+    saveStateToLocalStorage();
 }
 
 function savePrivilege() {
@@ -342,7 +350,7 @@ function updateRecentTransactions() {
                 <td>${transaction.createdBy}</td>
                 <td><span class="${transaction.status === 'paid' ? 'status-paid' : 'status-unpaid'}">${transaction.status === 'paid' ? 'Payé' : 'Non payé'}</span></td>
                 <td>
-                    <button class="btn btn-sm btn-warning" onclick="openEditTransactionModal('${transaction.id}')">
+                    <button class="btn btn-sm btn-warning" onclick="selectTransactionForEdit('${transaction.id}')">
                         Sélectionner
                     </button>
                 </td>
@@ -374,8 +382,13 @@ function setupAdminExtended() {
     document.getElementById('view-cashier-balances')?.addEventListener('click', viewCashierBalances);
     document.getElementById('adjust-cashier-balance')?.addEventListener('click', adjustCashierBalance);
     
+    // Fournisseurs
+    document.getElementById('add-supplier')?.addEventListener('click', addSupplier);
+    updateSuppliersList();
+    
     // Initialiser l'affichage
     updateAdminExtendedDisplay();
+    updatePaymentMethodBalancesDisplay();
 }
 
 function updateAdminExtendedDisplay() {
@@ -388,6 +401,14 @@ function updateAdminExtendedDisplay() {
     
     // Mettre à jour les totaux par utilisateur
     updateUserTransactionTotals();
+}
+
+function updatePaymentMethodBalancesDisplay() {
+    document.getElementById('cash-balance').textContent = (state.paymentMethodBalances?.cash || 0).toLocaleString() + ' Gdes';
+    document.getElementById('moncash-balance').textContent = (state.paymentMethodBalances?.moncash || 0).toLocaleString() + ' Gdes';
+    document.getElementById('natcash-balance').textContent = (state.paymentMethodBalances?.natcash || 0).toLocaleString() + ' Gdes';
+    document.getElementById('card-balance').textContent = (state.paymentMethodBalances?.card || 0).toLocaleString() + ' Gdes';
+    document.getElementById('external-balance').textContent = (state.paymentMethodBalances?.external || 0).toLocaleString() + ' Gdes';
 }
 
 // Ajouter un crédit à un patient (fonction pour ajouter du crédit manuellement)
@@ -551,14 +572,66 @@ function viewCreditHistory(patientId = null) {
     document.body.appendChild(modal);
 }
 
-// Modifier une transaction existante (ancienne méthode - redirige vers la nouvelle)
+// Modifier une transaction existante
 function editTransaction() {
     const transactionId = document.getElementById('selected-transaction-id').value;
     if (!transactionId) {
         alert("Veuillez sélectionner une transaction!");
         return;
     }
-    openEditTransactionModal(transactionId);
+    
+    const transaction = state.transactions.find(t => t.id === transactionId);
+    if (!transaction) {
+        alert("Transaction non trouvée!");
+        return;
+    }
+    
+    // Vérifier les permissions
+    if (state.currentRole === 'responsible' && !state.roles.responsible.canModifyAllTransactions) {
+        alert("Vous n'avez pas la permission de modifier les transactions!");
+        return;
+    }
+    
+    const newAmount = parseFloat(prompt("Nouveau montant (Gdes):", transaction.amount));
+    if (!newAmount || newAmount < 0) {
+        alert("Montant invalide!");
+        return;
+    }
+    
+    const oldAmount = transaction.amount;
+    transaction.amount = newAmount;
+    
+    // Mettre à jour les soldes si la transaction était payée
+    if (transaction.status === 'paid') {
+        const difference = newAmount - oldAmount;
+        
+        // Mettre à jour le solde du caissier si applicable
+        if (state.cashierBalances[transaction.paymentAgent]) {
+            state.cashierBalances[transaction.paymentAgent].balance += difference;
+        }
+        
+        // Mettre à jour la grande caisse et le mode de paiement
+        state.mainCash += difference;
+        if (transaction.paymentMethod && state.paymentMethodBalances[transaction.paymentMethod] !== undefined) {
+            state.paymentMethodBalances[transaction.paymentMethod] += difference;
+        }
+    }
+    
+    // Ajouter une note d'audit
+    transaction.modifications = transaction.modifications || [];
+    transaction.modifications.push({
+        date: new Date().toISOString().split('T')[0],
+        time: new Date().toLocaleTimeString('fr-FR'),
+        by: state.currentUser.username,
+        oldAmount: oldAmount,
+        newAmount: newAmount,
+        reason: 'Modification par administrateur'
+    });
+    
+    alert("Transaction modifiée avec succès!");
+    updateAdminStats();
+    updateRecentTransactions();
+    updatePaymentMethodBalancesDisplay();
 }
 
 // Supprimer une transaction
@@ -590,6 +663,11 @@ function deleteTransaction() {
         // Rembourser la grande caisse
         state.mainCash -= transaction.amount;
         
+        // Rembourser le mode de paiement
+        if (transaction.paymentMethod && state.paymentMethodBalances[transaction.paymentMethod] !== undefined) {
+            state.paymentMethodBalances[transaction.paymentMethod] -= transaction.amount;
+        }
+        
         // Rembourser le caissier si applicable
         if (state.cashierBalances[transaction.paymentAgent]) {
             state.cashierBalances[transaction.paymentAgent].balance -= transaction.amount;
@@ -602,6 +680,7 @@ function deleteTransaction() {
     alert("Transaction supprimée avec succès!");
     updateAdminStats();
     updateRecentTransactions();
+    updatePaymentMethodBalancesDisplay();
 }
 
 // Générer un rapport complet
@@ -684,6 +763,7 @@ function generateFinancialReport(startDate, endDate) {
         byServiceType,
         mainCashBalance: state.mainCash,
         pettyCashBalance: state.pettyCash,
+        paymentMethodBalances: state.paymentMethodBalances,
         creditAccountsTotal: Object.values(state.creditAccounts).reduce((sum, acc) => sum + (acc.balance || 0), 0)
     };
 }
@@ -770,6 +850,14 @@ function displayReport(title, data) {
                 <p>Transactions: ${data.transactionCount} (Payées: ${data.paidCount}, Impayées: ${data.unpaidCount})</p>
                 <p>Caisse principale: <strong>${data.mainCashBalance.toLocaleString()} Gdes</strong></p>
                 <p>Petite caisse: <strong>${data.pettyCashBalance.toLocaleString()} Gdes</strong></p>
+                <h5>Soldes par mode de paiement :</h5>
+                <ul>
+                    <li>Espèces : ${data.paymentMethodBalances?.cash.toLocaleString()} Gdes</li>
+                    <li>MonCash : ${data.paymentMethodBalances?.moncash.toLocaleString()} Gdes</li>
+                    <li>NatCash : ${data.paymentMethodBalances?.natcash.toLocaleString()} Gdes</li>
+                    <li>Carte : ${data.paymentMethodBalances?.card.toLocaleString()} Gdes</li>
+                    <li>Externe : ${data.paymentMethodBalances?.external.toLocaleString()} Gdes</li>
+                </ul>
                 <p>Total crédits patients: <strong>${data.creditAccountsTotal.toLocaleString()} Gdes</strong></p>
             </div>
         `;
@@ -1080,7 +1168,7 @@ function viewUserTransactions(username) {
                 <td>${t.amount} Gdes</td>
                 <td>${t.status}</td>
                 <td>
-                    <button class="btn btn-warning btn-sm" onclick="openEditTransactionModal('${t.id}')">
+                    <button class="btn btn-warning btn-sm" onclick="selectTransactionForEdit('${t.id}')">
                         Sélectionner
                     </button>
                 </td>
@@ -1100,397 +1188,10 @@ function viewUserTransactions(username) {
     document.body.appendChild(modal);
 }
 
-// Sélectionner une transaction pour modification (ancienne méthode - redirige vers la nouvelle)
+// Sélectionner une transaction pour modification
 function selectTransactionForEdit(transactionId) {
-    openEditTransactionModal(transactionId);
-}
-
-// ==================== ÉDITION AVANCÉE DES TRANSACTIONS ====================
-function openEditTransactionModal(transactionId) {
-    const transaction = state.transactions.find(t => t.id === transactionId);
-    if (!transaction) {
-        alert("Transaction introuvable !");
-        return;
-    }
-
-    // Vérification des droits
-    if (state.currentRole !== 'admin' && state.currentRole !== 'responsible') {
-        alert("Vous n'avez pas la permission de modifier cette transaction.");
-        return;
-    }
-
-    const modal = document.createElement('div');
-    modal.className = 'transaction-details-modal';
-    modal.style.zIndex = '2000';
-
-    let content = `
-        <div class="transaction-details-content" style="max-width: 600px;">
-            <h3>Modifier la transaction</h3>
-            <p><strong>ID :</strong> ${transaction.id}</p>
-            <p><strong>Patient :</strong> ${transaction.patientName} (${transaction.patientId})</p>
-            <p><strong>Date :</strong> ${transaction.date} ${transaction.time}</p>
-            <hr>
-            <form id="edit-transaction-form">
-                <div class="form-group">
-                    <label>Type de service</label>
-                    <select id="edit-service-type" class="form-control">
-                        <option value="consultation" ${transaction.type === 'consultation' ? 'selected' : ''}>Consultation</option>
-                        <option value="lab" ${transaction.type === 'lab' ? 'selected' : ''}>Laboratoire</option>
-                        <option value="medication" ${transaction.type === 'medication' ? 'selected' : ''}>Médicament</option>
-                        <option value="external" ${transaction.type === 'external' ? 'selected' : ''}>Service externe</option>
-                    </select>
-                </div>
-                <div id="edit-service-specific"></div>
-                <div class="form-group">
-                    <label>Prix (Gdes)</label>
-                    <input type="number" id="edit-amount" class="form-control" value="${transaction.amount}" step="0.01" min="0">
-                </div>
-                <div class="form-group">
-                    <label>Statut</label>
-                    <select id="edit-status" class="form-control">
-                        <option value="paid" ${transaction.status === 'paid' ? 'selected' : ''}>Payé</option>
-                        <option value="unpaid" ${transaction.status === 'unpaid' ? 'selected' : ''}>Non payé</option>
-                        <option value="partial" ${transaction.status === 'partial' ? 'selected' : ''}>Partiel</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label>Méthode de paiement</label>
-                    <select id="edit-payment-method" class="form-control">
-                        <option value="cash" ${transaction.paymentMethod === 'cash' ? 'selected' : ''}>Espèces</option>
-                        <option value="card" ${transaction.paymentMethod === 'card' ? 'selected' : ''}>Carte</option>
-                        <option value="vip" ${transaction.paymentMethod === 'vip' ? 'selected' : ''}>VIP</option>
-                        <option value="credit" ${transaction.paymentMethod === 'credit' ? 'selected' : ''}>Crédit</option>
-                        <option value="">Non défini</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label>Note / raison de la modification</label>
-                    <textarea id="edit-note" class="form-control" rows="2" placeholder="Saisissez la raison de la modification..."></textarea>
-                </div>
-            </form>
-            <div class="mt-3 d-flex justify-between">
-                <button class="btn btn-success" onclick="saveTransactionChanges('${transactionId}')">Enregistrer</button>
-                <button class="btn btn-secondary" onclick="this.closest('.transaction-details-modal').remove()">Annuler</button>
-            </div>
-        </div>
-    `;
-
-    modal.innerHTML = content;
-    document.body.appendChild(modal);
-
-    // Charger les options spécifiques au type de service
-    updateEditServiceSpecific(transaction);
-    document.getElementById('edit-service-type').addEventListener('change', function() {
-        updateEditServiceSpecific(transaction);
-    });
-}
-
-function updateEditServiceSpecific(transaction) {
-    const type = document.getElementById('edit-service-type').value;
-    const container = document.getElementById('edit-service-specific');
-    let html = '';
-
-    if (type === 'consultation') {
-        html = `
-            <div class="form-group">
-                <label>Type de consultation</label>
-                <select id="edit-consultation-type" class="form-control">
-                    ${state.consultationTypes.filter(c => c.active).map(c => 
-                        `<option value="${c.id}" ${transaction.service === c.name ? 'selected' : ''} 
-                                data-price="${c.price}">${c.name} - ${c.price} Gdes</option>`
-                    ).join('')}
-                </select>
-            </div>
-        `;
-        // Mise à jour automatique du prix quand le type change
-        setTimeout(() => {
-            document.getElementById('edit-consultation-type')?.addEventListener('change', function() {
-                const selected = this.options[this.selectedIndex];
-                const price = parseFloat(selected.dataset.price);
-                document.getElementById('edit-amount').value = price;
-            });
-        }, 100);
-    } else if (type === 'medication') {
-        html = `
-            <div class="form-group">
-                <label>Médicament</label>
-                <select id="edit-medication-id" class="form-control">
-                    ${state.medicationStock.map(med => 
-                        `<option value="${med.id}" ${transaction.medicationId === med.id ? 'selected' : ''}
-                                data-price="${med.price}" data-name="${med.name}">${med.name} - ${med.price} Gdes (stock: ${med.quantity})</option>`
-                    ).join('')}
-                </select>
-            </div>
-            <div class="form-group">
-                <label>Quantité</label>
-                <input type="number" id="edit-medication-quantity" class="form-control" value="${transaction.quantity || 1}" min="1">
-            </div>
-        `;
-        setTimeout(() => {
-            const medSelect = document.getElementById('edit-medication-id');
-            const qtyInput = document.getElementById('edit-medication-quantity');
-            const amountInput = document.getElementById('edit-amount');
-            function updateMedAmount() {
-                if (medSelect && qtyInput) {
-                    const selected = medSelect.options[medSelect.selectedIndex];
-                    const price = parseFloat(selected.dataset.price);
-                    const qty = parseInt(qtyInput.value) || 1;
-                    amountInput.value = (price * qty).toFixed(2);
-                }
-            }
-            medSelect?.addEventListener('change', updateMedAmount);
-            qtyInput?.addEventListener('input', updateMedAmount);
-        }, 100);
-    } else if (type === 'lab') {
-        html = `
-            <div class="form-group">
-                <label>Examen de laboratoire</label>
-                <select id="edit-lab-analysis" class="form-control">
-                    ${state.labAnalysisTypes.filter(l => l.active).map(l => 
-                        `<option value="${l.id}" ${transaction.service === l.name ? 'selected' : ''}
-                                data-price="${l.price}">${l.name} - ${l.price} Gdes</option>`
-                    ).join('')}
-                </select>
-            </div>
-        `;
-        setTimeout(() => {
-            document.getElementById('edit-lab-analysis')?.addEventListener('change', function() {
-                const selected = this.options[this.selectedIndex];
-                const price = parseFloat(selected.dataset.price);
-                document.getElementById('edit-amount').value = price;
-            });
-        }, 100);
-    } else if (type === 'external') {
-        html = `
-            <div class="form-group">
-                <label>Service externe</label>
-                <select id="edit-external-service" class="form-control">
-                    ${state.externalServiceTypes.filter(s => s.active).map(s => 
-                        `<option value="${s.id}" ${transaction.service === s.name ? 'selected' : ''}
-                                data-price="${s.price}">${s.name} - ${s.price} Gdes</option>`
-                    ).join('')}
-                </select>
-            </div>
-        `;
-        setTimeout(() => {
-            document.getElementById('edit-external-service')?.addEventListener('change', function() {
-                const selected = this.options[this.selectedIndex];
-                const price = parseFloat(selected.dataset.price);
-                document.getElementById('edit-amount').value = price;
-            });
-        }, 100);
-    }
-
-    container.innerHTML = html;
-}
-
-function saveTransactionChanges(transactionId) {
-    const transaction = state.transactions.find(t => t.id === transactionId);
-    if (!transaction) return;
-
-    const oldAmount = transaction.amount;
-    const newAmount = parseFloat(document.getElementById('edit-amount').value);
-    const newStatus = document.getElementById('edit-status').value;
-    const newPaymentMethod = document.getElementById('edit-payment-method').value;
-    const note = document.getElementById('edit-note').value || 'Modification administrative';
-
-    if (isNaN(newAmount) || newAmount < 0) {
-        alert("Le montant doit être un nombre positif !");
-        return;
-    }
-
-    // Enregistrer l'état précédent
-    const modifications = transaction.modifications || [];
-    modifications.push({
-        date: new Date().toISOString().split('T')[0],
-        time: new Date().toLocaleTimeString('fr-FR'),
-        by: state.currentUser.username,
-        oldAmount: oldAmount,
-        newAmount: newAmount,
-        oldStatus: transaction.status,
-        newStatus: newStatus,
-        oldPaymentMethod: transaction.paymentMethod,
-        newPaymentMethod: newPaymentMethod,
-        reason: note
-    });
-
-    // Mettre à jour les champs principaux
-    transaction.amount = newAmount;
-    transaction.status = newStatus;
-    transaction.paymentMethod = newPaymentMethod;
-    transaction.modifications = modifications;
-
-    // Mise à jour des champs spécifiques selon le type
-    const type = document.getElementById('edit-service-type').value;
-    transaction.type = type;
-
-    if (type === 'consultation') {
-        const select = document.getElementById('edit-consultation-type');
-        if (select) {
-            const option = select.options[select.selectedIndex];
-            transaction.service = option.text.split(' - ')[0];
-            transaction.consultationTypeId = option.value;
-        }
-    } else if (type === 'medication') {
-        const medSelect = document.getElementById('edit-medication-id');
-        if (medSelect) {
-            const medOption = medSelect.options[medSelect.selectedIndex];
-            transaction.service = medOption.dataset.name;
-            transaction.medicationId = medOption.value;
-            transaction.quantity = parseInt(document.getElementById('edit-medication-quantity').value) || 1;
-        }
-    } else if (type === 'lab') {
-        const select = document.getElementById('edit-lab-analysis');
-        if (select) {
-            const option = select.options[select.selectedIndex];
-            transaction.service = option.text.split(' - ')[0];
-            transaction.labAnalysisId = option.value;
-        }
-    } else if (type === 'external') {
-        const select = document.getElementById('edit-external-service');
-        if (select) {
-            const option = select.options[select.selectedIndex];
-            transaction.service = option.text.split(' - ')[0];
-            transaction.externalServiceId = option.value;
-        }
-    }
-
-    // Gestion des écarts de caisse si la transaction était déjà payée
-    if (transaction.status === 'paid' && oldAmount !== newAmount) {
-        const difference = newAmount - oldAmount;
-        state.mainCash += difference;
-
-        // Ajuster le solde du caissier
-        if (transaction.paymentAgent && state.cashierBalances[transaction.paymentAgent]) {
-            state.cashierBalances[transaction.paymentAgent].balance += difference;
-        }
-
-        // Si diminution du prix, proposer un remboursement
-        if (difference < 0) {
-            alert(`ATTENTION : Le montant a diminué de ${Math.abs(difference)} Gdes.\nVeuillez rembourser cette somme au patient.`);
-        } else if (difference > 0) {
-            alert(`Le montant a augmenté de ${difference} Gdes.\nVeuillez encaisser cette somme auprès du patient.`);
-        }
-    }
-
-    // Fermer le modal
-    const modal = document.querySelector('.transaction-details-modal');
-    if (modal) modal.remove();
-
-    alert(`Transaction ${transactionId} modifiée avec succès !`);
-    
-    // Rafraîchir les affichages
-    if (document.getElementById('admin-patient-search')) {
-        searchAdminPatient();
-    }
-    updateAdminStats();
-    updateRecentTransactions();
-    saveStateToLocalStorage();
-}
-
-// ==================== IMPRESSION FICHE PATIENT ====================
-function printPatientTransactions(patientId) {
-    const patient = state.patients.find(p => p.id === patientId);
-    if (!patient) {
-        alert("Patient introuvable !");
-        return;
-    }
-
-    const transactions = state.transactions
-        .filter(t => t.patientId === patientId)
-        .sort((a, b) => new Date(b.date + ' ' + b.time) - new Date(a.date + ' ' + a.time));
-
-    const hospitalName = document.getElementById('hospital-name')?.value || 'Hôpital';
-    const hospitalAddress = document.getElementById('hospital-address')?.value || '';
-    const hospitalPhone = document.getElementById('hospital-phone')?.value || '';
-
-    let html = `
-        <html>
-        <head>
-            <title>Fiche patient - ${patient.fullName}</title>
-            <style>
-                body { font-family: Arial, sans-serif; padding: 20px; }
-                .header { text-align: center; margin-bottom: 30px; }
-                .patient-info { margin: 20px 0; padding: 10px; background: #f5f5f5; border-radius: 5px; }
-                table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-                th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-                th { background-color: #007bff; color: white; }
-                .total-row { font-weight: bold; background-color: #e9ecef; }
-                @media print { .no-print { display: none; } }
-            </style>
-        </head>
-        <body>
-            <div class="header">
-                <h2>${hospitalName}</h2>
-                <p>${hospitalAddress}</p>
-                <p>${hospitalPhone ? 'Tél: ' + hospitalPhone : ''}</p>
-                <h3>Fiche récapitulative des transactions</h3>
-            </div>
-            <div class="patient-info">
-                <p><strong>Patient :</strong> ${patient.fullName} (${patient.id})</p>
-                <p><strong>Date de naissance :</strong> ${patient.birthDate || 'Non renseignée'}</p>
-                <p><strong>Téléphone :</strong> ${patient.phone || 'Non renseigné'}</p>
-                <p><strong>Adresse :</strong> ${patient.address || 'Non renseignée'}</p>
-                <p><strong>Date d'enregistrement :</strong> ${patient.registrationDate || ''}</p>
-            </div>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Date</th>
-                        <th>Service</th>
-                        <th>Montant (Gdes)</th>
-                        <th>Statut</th>
-                        <th>Paiement</th>
-                        <th>Agent</th>
-                    </tr>
-                </thead>
-                <tbody>
-    `;
-
-    let totalPaid = 0, totalUnpaid = 0;
-    transactions.forEach(t => {
-        const status = t.status === 'paid' ? 'Payé' : (t.status === 'unpaid' ? 'Impayé' : 'Partiel');
-        html += `
-            <tr>
-                <td>${t.date} ${t.time}</td>
-                <td>${t.service}</td>
-                <td style="text-align: right;">${t.amount.toFixed(2)}</td>
-                <td>${status}</td>
-                <td>${t.paymentMethod || '-'}</td>
-                <td>${t.paymentAgent || t.createdBy || '-'}</td>
-            </tr>
-        `;
-        if (t.status === 'paid') totalPaid += t.amount;
-        else totalUnpaid += t.amount;
-    });
-
-    html += `
-                </tbody>
-                <tfoot>
-                    <tr class="total-row">
-                        <td colspan="2"><strong>Total payé</strong></td>
-                        <td style="text-align: right;"><strong>${totalPaid.toFixed(2)} Gdes</strong></td>
-                        <td colspan="3"></td>
-                    </tr>
-                    <tr class="total-row">
-                        <td colspan="2"><strong>Total impayé</strong></td>
-                        <td style="text-align: right;"><strong>${totalUnpaid.toFixed(2)} Gdes</strong></td>
-                        <td colspan="3"></td>
-                    </tr>
-                </tfoot>
-            </table>
-            <p style="margin-top: 30px; text-align: right;">Édité le ${new Date().toLocaleDateString('fr-FR')} par ${state.currentUser.name}</p>
-            <div class="no-print" style="margin-top: 20px; text-align: center;">
-                <button onclick="window.print()">Imprimer</button>
-                <button onclick="window.close()">Fermer</button>
-            </div>
-        </body>
-        </html>
-    `;
-
-    const printWindow = window.open('', '_blank');
-    printWindow.document.write(html);
-    printWindow.document.close();
+    document.getElementById('selected-transaction-id').value = transactionId;
+    alert(`Transaction ${transactionId} sélectionnée pour modification`);
 }
 
 // Exporter un rapport en CSV
@@ -1517,6 +1218,11 @@ function exportReportToCSV() {
             rows.push(["Crédits utilisés", financialData.totalCreditUsed || 0]);
             rows.push(["Caisse principale", financialData.mainCashBalance]);
             rows.push(["Petite caisse", financialData.pettyCashBalance]);
+            rows.push(["Espèces", financialData.paymentMethodBalances?.cash]);
+            rows.push(["MonCash", financialData.paymentMethodBalances?.moncash]);
+            rows.push(["NatCash", financialData.paymentMethodBalances?.natcash]);
+            rows.push(["Carte", financialData.paymentMethodBalances?.card]);
+            rows.push(["Externe", financialData.paymentMethodBalances?.external]);
             break;
     }
     
@@ -1667,6 +1373,120 @@ function usePatientCreditPrompt(patientId = null) {
     
     alert(`Crédit utilisé: ${amountToUse - remainingCredit} Gdes\nNouveau solde disponible: ${creditAccount.available} Gdes`);
     searchAdminPatient();
+}
+
+// ==================== PAIEMENT DES EMPLOYÉS ====================
+function updateEmployeeSelect() {
+    const select = document.getElementById('employee-select');
+    if (!select) return;
+    
+    select.innerHTML = '<option value="">Choisir un employé</option>';
+    state.users.forEach(user => {
+        if (user.active && user.role !== 'admin' && user.role !== 'responsible') {
+            select.innerHTML += `<option value="${user.username}">${user.name} (${user.role})</option>`;
+        }
+    });
+}
+
+function payEmployee() {
+    const username = document.getElementById('employee-select').value;
+    const method = document.getElementById('employee-payment-method').value;
+    const amount = parseFloat(document.getElementById('employee-payment-amount').value);
+    
+    if (!username || !method || !amount || amount <= 0) {
+        alert("Veuillez remplir tous les champs !");
+        return;
+    }
+    
+    // Vérifier si le solde du mode de paiement est suffisant
+    if (state.paymentMethodBalances[method] < amount) {
+        alert(`Fonds insuffisants dans le mode ${method} !`);
+        return;
+    }
+    
+    if (confirm(`Payer ${amount} Gdes à ${username} via ${method} ?`)) {
+        // Déduire du mode de paiement
+        state.paymentMethodBalances[method] -= amount;
+        // Ajouter à la grande caisse (car la grande caisse est la somme de tous)
+        // On ne modifie pas mainCash directement car mainCash est recalculé comme somme des modes
+        // Pour simplifier, on garde mainCash comme variable indépendante, mais on la met à jour aussi
+        state.mainCash -= amount; // car on sort de l'argent
+        
+        // Enregistrer le paiement
+        const payment = {
+            id: 'EMP' + Date.now(),
+            username: username,
+            amount: amount,
+            method: method,
+            date: new Date().toISOString().split('T')[0],
+            time: new Date().toLocaleTimeString('fr-FR'),
+            by: state.currentUser.username
+        };
+        if (!state.employeePayments) state.employeePayments = [];
+        state.employeePayments.push(payment);
+        
+        alert("Paiement enregistré !");
+        updateEmployeePaymentsHistory();
+        updatePaymentMethodBalancesDisplay();
+        updateAdminExtendedDisplay();
+        document.getElementById('employee-payment-amount').value = '';
+    }
+}
+
+function updateEmployeePaymentsHistory() {
+    const container = document.getElementById('employee-payments-history');
+    if (!container) return;
+    
+    let html = '';
+    (state.employeePayments || []).slice().reverse().forEach(p => {
+        html += `<tr><td>${p.username}</td><td>${p.amount} Gdes</td><td>${p.date} ${p.time}</td><td>${p.method}</td></tr>`;
+    });
+    container.innerHTML = html || '<tr><td colspan="4" class="text-center">Aucun paiement</td></tr>';
+}
+
+// ==================== GESTION DES FOURNISSEURS ====================
+function addSupplier() {
+    const name = document.getElementById('new-supplier-name').value.trim();
+    const type = document.getElementById('new-supplier-type').value;
+    const contact = document.getElementById('new-supplier-contact').value.trim();
+    
+    if (!name || !type) {
+        alert("Veuillez entrer au moins le nom et le type du fournisseur !");
+        return;
+    }
+    
+    const newSupplier = {
+        id: Date.now(),
+        name: name,
+        type: type,
+        contact: contact
+    };
+    
+    state.suppliers.push(newSupplier);
+    document.getElementById('new-supplier-name').value = '';
+    document.getElementById('new-supplier-contact').value = '';
+    updateSuppliersList();
+    saveStateToLocalStorage();
+    alert("Fournisseur ajouté !");
+}
+
+function updateSuppliersList() {
+    const container = document.getElementById('suppliers-list');
+    if (!container) return;
+    
+    let html = '';
+    state.suppliers.forEach(s => {
+        html += `<tr><td>${s.name}</td><td>${s.type === 'credit' ? 'Crédit' : 'Comptant'}</td><td>${s.contact || ''}</td><td><button class="btn btn-sm btn-danger" onclick="deleteSupplier(${s.id})">Supprimer</button></td></tr>`;
+    });
+    container.innerHTML = html || '<tr><td colspan="4" class="text-center">Aucun fournisseur</td></tr>';
+}
+
+function deleteSupplier(id) {
+    if (confirm("Supprimer ce fournisseur ?")) {
+        state.suppliers = state.suppliers.filter(s => s.id !== id);
+        updateSuppliersList();
+        saveStateToLocalStorage();
+    }
 }
 
 // ==================== PARAMÈTRES ====================
@@ -2057,6 +1877,7 @@ function updateSettingsDisplay() {
     }
     
     updateUsersList();
+    updateSuppliersList();
     
     // Mettre à jour les selects dans d'autres modules
     if (typeof updateConsultationTypesSelect === 'function') updateConsultationTypesSelect();
@@ -2288,6 +2109,8 @@ function setupMessaging() {
                 targetUsers = state.users.filter(u => u.role === 'pharmacy' && u.active && u.username !== state.currentUser.username);
             } else if (recipient === 'all-admins') {
                 targetUsers = state.users.filter(u => u.role === 'admin' && u.active && u.username !== state.currentUser.username);
+            } else if (recipient === 'all-responsibles') {
+                targetUsers = state.users.filter(u => u.role === 'responsible' && u.active && u.username !== state.currentUser.username);
             }
             
             const messageContent = prompt(`Entrez votre message à ${targetUsers.length} destinataire(s):`);
@@ -2344,7 +2167,8 @@ function updateMessageRecipients() {
         '<option value="all-cashiers">Tous les caissiers</option>' +
         '<option value="all-labs">Tout le laboratoire</option>' +
         '<option value="all-pharmacies">Toute la pharmacie</option>' +
-        '<option value="all-admins">Tous les administrateurs</option>';
+        '<option value="all-admins">Tous les administrateurs</option>' +
+        '<option value="all-responsibles">Tous les responsables</option>';
     
     state.users.forEach(user => {
         if (user.active && user.username !== state.currentUser.username) {
@@ -2491,3 +2315,10 @@ function sendMessage() {
     loadConversation(state.currentConversation);
     updateMessageBadge();
 }
+
+// Rendre accessibles les fonctions nécessaires
+window.savePatientNotes = savePatientNotes;
+window.selectTransactionForEdit = selectTransactionForEdit;
+window.viewCreditHistory = viewCreditHistory;
+window.usePatientCreditPrompt = usePatientCreditPrompt;
+window.deleteSupplier = deleteSupplier;
