@@ -1362,21 +1362,22 @@
     </div>
     
     <div id="print-container"></div>
-    <script src="app.js"></script>        <!-- ou le nom de votre fichier principal contenant l'objet state -->
+<!-- État global et authentification en premier -->
+<script src="config.js"></script>
+<script src="auth.js"></script>
+
+<!-- Modules métier (ordre quelconque, mais après state) -->
 <script src="admin-core.js"></script>
 <script src="admin-extended.js"></script>
 <script src="settings.js"></script>
 <script src="messaging.js"></script>
-
-    <script src="config.js"></script>
-    <script src="auth.js"></script>
-    <script src="secretary.js"></script>
-    <script src="cashier.js"></script>
-    <script src="pharmacy.js"></script>
-    <script src="main.js"></script>
-    <script src="nurse.js"></script>
-    <script src="doctor.js"></script>
-    <script src="laboratory.js"></script>
-    <script src="responsible.js"></script>
+<script src="secretary.js"></script>
+<script src="cashier.js"></script>
+<script src="pharmacy.js"></script>
+<script src="nurse.js"></script>
+<script src="doctor.js"></script>
+<script src="laboratory.js"></script>
+<script src="responsible.js"></script>
+<script src="main.js"></script>
 </body>
 </html>
