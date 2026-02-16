@@ -35,23 +35,46 @@ function setupAdmin() {
     
     // NOUVELLES FONCTIONNALITÉS ADMINISTRATION
     setupAdminExtended();
-    
-    // Paiement des employés
-    document.getElementById('pay-employee-btn')?.addEventListener('click', payEmployee);
-    updateEmployeeSelect();
-    updateEmployeePaymentsHistory();
 }
 
 function searchAdminPatient() {
-    const patientId = document.getElementById('admin-patient-search').value.trim();
-    const patient = state.patients.find(p => p.id === patientId);
-    
-    if (!patient) {
-        alert("Patient non trouvé!");
-        document.getElementById('admin-patient-details').classList.add('hidden');
+    const input = document.getElementById('admin-patient-search').value.trim();
+    if (!input) {
+        alert("Veuillez entrer un ID patient, un nom ou un ID de transaction.");
         return;
     }
-    
+
+    // 1. Recherche par ID patient exact
+    let patient = state.patients.find(p => p.id === input);
+    if (patient) {
+        displayPatientAdmin(patient);
+        return;
+    }
+
+    // 2. Recherche par ID de transaction (commence par 'TR')
+    if (input.toUpperCase().startsWith('TR')) {
+        const transaction = state.transactions.find(t => t.id.toUpperCase() === input.toUpperCase());
+        if (transaction) {
+            displayTransactionForEdit(transaction);
+            return;
+        }
+    }
+
+    // 3. Recherche par nom de patient (contient)
+    patient = state.patients.find(p => 
+        p.fullName.toLowerCase().includes(input.toLowerCase())
+    );
+    if (patient) {
+        displayPatientAdmin(patient);
+        return;
+    }
+
+    alert("Aucun patient ou transaction trouvé avec cette référence.");
+    document.getElementById('admin-patient-details').classList.add('hidden');
+}
+
+// Affiche les détails d'un patient (identique à l'ancien contenu de searchAdminPatient)
+function displayPatientAdmin(patient) {
     // Vérifier expiration des privilèges
     if (patient.privilegeGrantedDate) {
         const now = new Date();
@@ -71,10 +94,6 @@ function searchAdminPatient() {
     
     document.getElementById('admin-patient-name').textContent = patient.fullName + ' (' + patient.id + ')';
     document.getElementById('admin-patient-details').classList.remove('hidden');
-    
-    // Remplir les notes (conservé de la version longue)
-    document.getElementById('patient-allergies-admin').value = patient.allergies || '';
-    document.getElementById('patient-notes-admin').value = patient.notes || '';
     
     const privilegeSelect = document.getElementById('privilege-type');
     const discountSection = document.getElementById('discount-section');
@@ -125,19 +144,34 @@ function searchAdminPatient() {
     document.getElementById('admin-patient-history').innerHTML = html;
     
     // Afficher le crédit du patient
-    updateCreditDisplay(patientId);
+    updateCreditDisplay(patient.id);
 }
 
-function savePatientNotes() {
-    const patientId = document.getElementById('admin-patient-search').value.trim();
-    const patient = state.patients.find(p => p.id === patientId);
-    if (!patient) return;
+// Affiche une transaction individuelle pour modification
+function displayTransactionForEdit(transaction) {
+    // On remplit le champ caché
+    document.getElementById('selected-transaction-id').value = transaction.id;
     
-    patient.allergies = document.getElementById('patient-allergies-admin').value;
-    patient.notes = document.getElementById('patient-notes-admin').value;
-    
-    alert("Notes du patient mises à jour !");
-    saveStateToLocalStorage();
+    // On affiche un résumé
+    const html = `
+        <div class="card">
+            <h4>Transaction ${transaction.id}</h4>
+            <p><strong>Patient :</strong> ${transaction.patientName} (${transaction.patientId})</p>
+            <p><strong>Service :</strong> ${transaction.service}</p>
+            <p><strong>Montant :</strong> ${transaction.amount} Gdes</p>
+            <p><strong>Statut :</strong> ${transaction.status}</p>
+            <p><strong>Date :</strong> ${transaction.date} ${transaction.time}</p>
+            <div class="mt-2">
+                <button class="btn btn-warning" onclick="editTransaction()">Modifier</button>
+                <button class="btn btn-danger" onclick="deleteTransaction()">Supprimer</button>
+            </div>
+        </div>
+    `;
+    document.getElementById('admin-patient-details').classList.remove('hidden');
+    document.getElementById('admin-patient-name').textContent = `Transaction ${transaction.id}`;
+    document.getElementById('admin-patient-history').innerHTML = html;
+    // Cacher les sections de privilèges
+    document.getElementById('privilege-type').closest('.card')?.classList.add('hidden');
 }
 
 function savePrivilege() {
@@ -382,14 +416,268 @@ function setupAdminExtended() {
     document.getElementById('view-cashier-balances')?.addEventListener('click', viewCashierBalances);
     document.getElementById('adjust-cashier-balance')?.addEventListener('click', adjustCashierBalance);
     
-    // Fournisseurs
-    document.getElementById('add-supplier')?.addEventListener('click', addSupplier);
-    updateSuppliersList();
+    // AJOUT : Gestion des fournisseurs
+    document.getElementById('manage-suppliers-btn')?.addEventListener('click', showSupplierManagement);
+    
+    // AJOUT : Paiement des employés
+    document.getElementById('pay-employee-btn')?.addEventListener('click', showEmployeePayment);
     
     // Initialiser l'affichage
     updateAdminExtendedDisplay();
-    updatePaymentMethodBalancesDisplay();
+    
+    // Initialiser les structures si elles n'existent pas
+    if (!state.suppliers) state.suppliers = [];
+    if (!state.employeePayments) state.employeePayments = [];
 }
+
+// ==================== GESTION DES FOURNISSEURS ====================
+function showSupplierManagement() {
+    const modal = document.createElement('div');
+    modal.className = 'transaction-details-modal';
+    modal.innerHTML = `
+        <div class="transaction-details-content" style="max-width: 800px;">
+            <h3>Gestion des fournisseurs</h3>
+            <button class="btn btn-success mb-3" onclick="addSupplier()">Nouveau fournisseur</button>
+            <div id="supplier-list-container">
+                ${renderSupplierList()}
+            </div>
+            <button class="btn btn-secondary mt-3" onclick="this.closest('.transaction-details-modal').remove()">Fermer</button>
+        </div>
+    `;
+    document.body.appendChild(modal);
+}
+
+function renderSupplierList() {
+    if (!state.suppliers || state.suppliers.length === 0) {
+        return '<p>Aucun fournisseur enregistré.</p>';
+    }
+    let html = '<table class="table-container"><thead><tr><th>Nom</th><th>Adresse</th><th>Type vente</th><th>Marchandises</th><th>Date paiement</th><th>Montant dû</th><th>Actions</th></tr></thead><tbody>';
+    state.suppliers.forEach(s => {
+        html += `
+            <tr>
+                <td>${s.name}</td>
+                <td>${s.address || '-'}</td>
+                <td>${s.saleType === 'cash' ? 'Comptant' : s.saleType === 'credit' ? 'Crédit' : 'Les deux'}</td>
+                <td>${s.goods || '-'}</td>
+                <td>${s.paymentDate || '-'}</td>
+                <td>${s.amountDue || 0} Gdes</td>
+                <td>
+                    <button class="btn btn-sm btn-warning" onclick="editSupplier('${s.id}')">Modifier</button>
+                    <button class="btn btn-sm btn-danger" onclick="deleteSupplier('${s.id}')">Supprimer</button>
+                </td>
+            </tr>
+        `;
+    });
+    html += '</tbody></table>';
+    return html;
+}
+
+function addSupplier() {
+    showSupplierForm(null);
+}
+
+function editSupplier(id) {
+    const supplier = state.suppliers.find(s => s.id == id);
+    if (supplier) showSupplierForm(supplier);
+}
+
+function showSupplierForm(supplier) {
+    const isEdit = !!supplier;
+    const modal = document.createElement('div');
+    modal.className = 'transaction-details-modal';
+    modal.innerHTML = `
+        <div class="transaction-details-content" style="max-width: 500px;">
+            <h3>${isEdit ? 'Modifier' : 'Ajouter'} un fournisseur</h3>
+            <form id="supplier-form">
+                <div class="form-group">
+                    <label>Nom *</label>
+                    <input type="text" id="supplier-name" class="form-control" value="${supplier?.name || ''}" required>
+                </div>
+                <div class="form-group">
+                    <label>Adresse</label>
+                    <input type="text" id="supplier-address" class="form-control" value="${supplier?.address || ''}">
+                </div>
+                <div class="form-group">
+                    <label>Type de vente *</label>
+                    <select id="supplier-sale-type" class="form-control">
+                        <option value="cash" ${supplier?.saleType === 'cash' ? 'selected' : ''}>Comptant</option>
+                        <option value="credit" ${supplier?.saleType === 'credit' ? 'selected' : ''}>Crédit</option>
+                        <option value="both" ${supplier?.saleType === 'both' ? 'selected' : ''}>Les deux</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Types de marchandises fournies</label>
+                    <input type="text" id="supplier-goods" class="form-control" value="${supplier?.goods || ''}" placeholder="ex: médicaments, matériel">
+                </div>
+                <div class="form-group">
+                    <label>Date de paiement prévue</label>
+                    <input type="date" id="supplier-payment-date" class="form-control" value="${supplier?.paymentDate || ''}">
+                </div>
+                <div class="form-group">
+                    <label>Montant total à payer (Gdes)</label>
+                    <input type="number" step="0.01" id="supplier-amount-due" class="form-control" value="${supplier?.amountDue || 0}">
+                </div>
+                <div class="mt-3">
+                    <button type="button" class="btn btn-success" onclick="saveSupplier(${isEdit ? supplier.id : 'null'})">Enregistrer</button>
+                    <button type="button" class="btn btn-secondary" onclick="this.closest('.transaction-details-modal').remove()">Annuler</button>
+                </div>
+            </form>
+        </div>
+    `;
+    document.body.appendChild(modal);
+}
+
+function saveSupplier(id) {
+    const name = document.getElementById('supplier-name').value.trim();
+    if (!name) {
+        alert("Le nom est obligatoire.");
+        return;
+    }
+    const address = document.getElementById('supplier-address').value.trim();
+    const saleType = document.getElementById('supplier-sale-type').value;
+    const goods = document.getElementById('supplier-goods').value.trim();
+    const paymentDate = document.getElementById('supplier-payment-date').value;
+    const amountDue = parseFloat(document.getElementById('supplier-amount-due').value) || 0;
+
+    const supplierData = {
+        id: id === 'null' ? Date.now() : id,
+        name,
+        address,
+        saleType,
+        goods,
+        paymentDate,
+        amountDue
+    };
+
+    if (id === 'null') {
+        state.suppliers.push(supplierData);
+    } else {
+        const index = state.suppliers.findIndex(s => s.id == id);
+        if (index !== -1) state.suppliers[index] = supplierData;
+    }
+
+    // Fermer le formulaire et rafraîchir la liste
+    document.querySelector('.transaction-details-modal').remove();
+    showSupplierManagement(); // réaffiche la liste mise à jour
+    saveStateToLocalStorage();
+    alert("Fournisseur enregistré.");
+}
+
+function deleteSupplier(id) {
+    if (confirm("Supprimer ce fournisseur ?")) {
+        state.suppliers = state.suppliers.filter(s => s.id != id);
+        showSupplierManagement(); // rafraîchit
+        saveStateToLocalStorage();
+    }
+}
+
+// ==================== PAIEMENT DES EMPLOYÉS ====================
+function showEmployeePayment() {
+    const modal = document.createElement('div');
+    modal.className = 'transaction-details-modal';
+    modal.innerHTML = `
+        <div class="transaction-details-content" style="max-width: 600px;">
+            <h3>Paiement des employés</h3>
+            <div id="employee-payment-list">
+                ${renderEmployeePaymentList()}
+            </div>
+            <button class="btn btn-secondary mt-3" onclick="this.closest('.transaction-details-modal').remove()">Fermer</button>
+        </div>
+    `;
+    document.body.appendChild(modal);
+}
+
+function renderEmployeePaymentList() {
+    if (!state.users || state.users.length === 0) return '<p>Aucun employé.</p>';
+
+    let html = '<table class="table-container"><thead><tr><th>Employé</th><th>Rôle</th><th>Dernier paiement</th><th>Actions</th></tr></thead><tbody>';
+    state.users.forEach(user => {
+        // Trouver le dernier paiement
+        const payments = state.employeePayments?.filter(p => p.employeeId === user.id) || [];
+        const lastPayment = payments.sort((a,b) => new Date(b.date) - new Date(a.date))[0];
+        const lastDate = lastPayment ? new Date(lastPayment.date).toLocaleDateString('fr-FR') + ' - ' + lastPayment.amount + ' Gdes' : 'Aucun';
+        
+        html += `
+            <tr>
+                <td>${user.name} (${user.username})</td>
+                <td>${user.role}</td>
+                <td>${lastDate}</td>
+                <td>
+                    <button class="btn btn-sm btn-success" onclick="payEmployee('${user.id}')">Payer</button>
+                    <button class="btn btn-sm btn-info" onclick="viewEmployeePayments('${user.id}')">Historique</button>
+                </td>
+            </tr>
+        `;
+    });
+    html += '</tbody></table>';
+    return html;
+}
+
+function payEmployee(employeeId) {
+    const employee = state.users.find(u => u.id == employeeId);
+    if (!employee) return;
+
+    const amount = parseFloat(prompt(`Montant à payer à ${employee.name} (Gdes) :`, "0"));
+    if (isNaN(amount) || amount <= 0) {
+        alert("Montant invalide.");
+        return;
+    }
+
+    const date = prompt("Date du paiement (YYYY-MM-DD) :", new Date().toISOString().split('T')[0]);
+    if (!date) return;
+
+    // Enregistrer le paiement
+    const payment = {
+        id: 'PAY' + Date.now(),
+        employeeId: employeeId,
+        employeeName: employee.name,
+        amount: amount,
+        date: date,
+        recordedBy: state.currentUser.username,
+        timestamp: new Date().toISOString()
+    };
+    if (!state.employeePayments) state.employeePayments = [];
+    state.employeePayments.push(payment);
+
+    // Déduire de la caisse principale ? (optionnel)
+    if (confirm("Déduire ce montant de la grande caisse ?")) {
+        if (state.mainCash >= amount) {
+            state.mainCash -= amount;
+        } else {
+            alert("Fonds insuffisants dans la grande caisse.");
+        }
+    }
+
+    saveStateToLocalStorage();
+    alert("Paiement enregistré.");
+    // Rafraîchir la liste
+    showEmployeePayment();
+}
+
+function viewEmployeePayments(employeeId) {
+    const employee = state.users.find(u => u.id == employeeId);
+    const payments = state.employeePayments?.filter(p => p.employeeId == employeeId) || [];
+    payments.sort((a,b) => new Date(b.date) - new Date(a.date));
+
+    let html = `<h4>Historique des paiements - ${employee.name}</h4>`;
+    if (payments.length === 0) {
+        html += '<p>Aucun paiement enregistré.</p>';
+    } else {
+        html += '<table class="table-container"><thead><tr><th>Date</th><th>Montant</th><th>Enregistré par</th></tr></thead><tbody>';
+        payments.forEach(p => {
+            html += `<tr><td>${p.date}</td><td>${p.amount} Gdes</td><td>${p.recordedBy}</td></tr>`;
+        });
+        html += '</tbody></table>';
+    }
+    html += '<button class="btn btn-secondary mt-2" onclick="this.closest(\'.transaction-details-modal\').remove()">Fermer</button>';
+
+    const modal = document.createElement('div');
+    modal.className = 'transaction-details-modal';
+    modal.innerHTML = `<div class="transaction-details-content">${html}</div>`;
+    document.body.appendChild(modal);
+}
+
+// ==================== FIN DES AJOUTS ====================
 
 function updateAdminExtendedDisplay() {
     // Mettre à jour les affichages des caisses
@@ -401,14 +689,6 @@ function updateAdminExtendedDisplay() {
     
     // Mettre à jour les totaux par utilisateur
     updateUserTransactionTotals();
-}
-
-function updatePaymentMethodBalancesDisplay() {
-    document.getElementById('cash-balance').textContent = (state.paymentMethodBalances?.cash || 0).toLocaleString() + ' Gdes';
-    document.getElementById('moncash-balance').textContent = (state.paymentMethodBalances?.moncash || 0).toLocaleString() + ' Gdes';
-    document.getElementById('natcash-balance').textContent = (state.paymentMethodBalances?.natcash || 0).toLocaleString() + ' Gdes';
-    document.getElementById('card-balance').textContent = (state.paymentMethodBalances?.card || 0).toLocaleString() + ' Gdes';
-    document.getElementById('external-balance').textContent = (state.paymentMethodBalances?.external || 0).toLocaleString() + ' Gdes';
 }
 
 // Ajouter un crédit à un patient (fonction pour ajouter du crédit manuellement)
@@ -513,7 +793,7 @@ function transferToPettyCash() {
     }
 }
 
-// Afficher l'historique des crédits (version courte)
+// Afficher l'historique des crédits
 function viewCreditHistory(patientId = null) {
     if (!patientId) {
         patientId = document.getElementById('admin-patient-search').value.trim();
@@ -610,11 +890,8 @@ function editTransaction() {
             state.cashierBalances[transaction.paymentAgent].balance += difference;
         }
         
-        // Mettre à jour la grande caisse et le mode de paiement
+        // Mettre à jour la grande caisse
         state.mainCash += difference;
-        if (transaction.paymentMethod && state.paymentMethodBalances[transaction.paymentMethod] !== undefined) {
-            state.paymentMethodBalances[transaction.paymentMethod] += difference;
-        }
     }
     
     // Ajouter une note d'audit
@@ -631,7 +908,6 @@ function editTransaction() {
     alert("Transaction modifiée avec succès!");
     updateAdminStats();
     updateRecentTransactions();
-    updatePaymentMethodBalancesDisplay();
 }
 
 // Supprimer une transaction
@@ -663,11 +939,6 @@ function deleteTransaction() {
         // Rembourser la grande caisse
         state.mainCash -= transaction.amount;
         
-        // Rembourser le mode de paiement
-        if (transaction.paymentMethod && state.paymentMethodBalances[transaction.paymentMethod] !== undefined) {
-            state.paymentMethodBalances[transaction.paymentMethod] -= transaction.amount;
-        }
-        
         // Rembourser le caissier si applicable
         if (state.cashierBalances[transaction.paymentAgent]) {
             state.cashierBalances[transaction.paymentAgent].balance -= transaction.amount;
@@ -680,7 +951,6 @@ function deleteTransaction() {
     alert("Transaction supprimée avec succès!");
     updateAdminStats();
     updateRecentTransactions();
-    updatePaymentMethodBalancesDisplay();
 }
 
 // Générer un rapport complet
@@ -763,7 +1033,6 @@ function generateFinancialReport(startDate, endDate) {
         byServiceType,
         mainCashBalance: state.mainCash,
         pettyCashBalance: state.pettyCash,
-        paymentMethodBalances: state.paymentMethodBalances,
         creditAccountsTotal: Object.values(state.creditAccounts).reduce((sum, acc) => sum + (acc.balance || 0), 0)
     };
 }
@@ -850,14 +1119,6 @@ function displayReport(title, data) {
                 <p>Transactions: ${data.transactionCount} (Payées: ${data.paidCount}, Impayées: ${data.unpaidCount})</p>
                 <p>Caisse principale: <strong>${data.mainCashBalance.toLocaleString()} Gdes</strong></p>
                 <p>Petite caisse: <strong>${data.pettyCashBalance.toLocaleString()} Gdes</strong></p>
-                <h5>Soldes par mode de paiement :</h5>
-                <ul>
-                    <li>Espèces : ${data.paymentMethodBalances?.cash.toLocaleString()} Gdes</li>
-                    <li>MonCash : ${data.paymentMethodBalances?.moncash.toLocaleString()} Gdes</li>
-                    <li>NatCash : ${data.paymentMethodBalances?.natcash.toLocaleString()} Gdes</li>
-                    <li>Carte : ${data.paymentMethodBalances?.card.toLocaleString()} Gdes</li>
-                    <li>Externe : ${data.paymentMethodBalances?.external.toLocaleString()} Gdes</li>
-                </ul>
                 <p>Total crédits patients: <strong>${data.creditAccountsTotal.toLocaleString()} Gdes</strong></p>
             </div>
         `;
@@ -1218,11 +1479,6 @@ function exportReportToCSV() {
             rows.push(["Crédits utilisés", financialData.totalCreditUsed || 0]);
             rows.push(["Caisse principale", financialData.mainCashBalance]);
             rows.push(["Petite caisse", financialData.pettyCashBalance]);
-            rows.push(["Espèces", financialData.paymentMethodBalances?.cash]);
-            rows.push(["MonCash", financialData.paymentMethodBalances?.moncash]);
-            rows.push(["NatCash", financialData.paymentMethodBalances?.natcash]);
-            rows.push(["Carte", financialData.paymentMethodBalances?.card]);
-            rows.push(["Externe", financialData.paymentMethodBalances?.external]);
             break;
     }
     
@@ -1267,7 +1523,7 @@ function printReport() {
     printWindow.print();
 }
 
-// Mettre à jour l'affichage du crédit dans la section patient (version courte)
+// Mettre à jour l'affichage du crédit dans la section patient
 function updateCreditDisplay(patientId) {
     const patient = state.patients.find(p => p.id === patientId);
     const creditAccount = state.creditAccounts[patientId];
@@ -1299,7 +1555,7 @@ function updateCreditDisplay(patientId) {
     }
 }
 
-// Utiliser le crédit d'un patient (version courte)
+// Utiliser le crédit d'un patient
 function usePatientCreditPrompt(patientId = null) {
     if (!patientId) {
         patientId = document.getElementById('admin-patient-search').value.trim();
@@ -1373,120 +1629,6 @@ function usePatientCreditPrompt(patientId = null) {
     
     alert(`Crédit utilisé: ${amountToUse - remainingCredit} Gdes\nNouveau solde disponible: ${creditAccount.available} Gdes`);
     searchAdminPatient();
-}
-
-// ==================== PAIEMENT DES EMPLOYÉS ====================
-function updateEmployeeSelect() {
-    const select = document.getElementById('employee-select');
-    if (!select) return;
-    
-    select.innerHTML = '<option value="">Choisir un employé</option>';
-    state.users.forEach(user => {
-        if (user.active && user.role !== 'admin' && user.role !== 'responsible') {
-            select.innerHTML += `<option value="${user.username}">${user.name} (${user.role})</option>`;
-        }
-    });
-}
-
-function payEmployee() {
-    const username = document.getElementById('employee-select').value;
-    const method = document.getElementById('employee-payment-method').value;
-    const amount = parseFloat(document.getElementById('employee-payment-amount').value);
-    
-    if (!username || !method || !amount || amount <= 0) {
-        alert("Veuillez remplir tous les champs !");
-        return;
-    }
-    
-    // Vérifier si le solde du mode de paiement est suffisant
-    if (state.paymentMethodBalances[method] < amount) {
-        alert(`Fonds insuffisants dans le mode ${method} !`);
-        return;
-    }
-    
-    if (confirm(`Payer ${amount} Gdes à ${username} via ${method} ?`)) {
-        // Déduire du mode de paiement
-        state.paymentMethodBalances[method] -= amount;
-        // Ajouter à la grande caisse (car la grande caisse est la somme de tous)
-        // On ne modifie pas mainCash directement car mainCash est recalculé comme somme des modes
-        // Pour simplifier, on garde mainCash comme variable indépendante, mais on la met à jour aussi
-        state.mainCash -= amount; // car on sort de l'argent
-        
-        // Enregistrer le paiement
-        const payment = {
-            id: 'EMP' + Date.now(),
-            username: username,
-            amount: amount,
-            method: method,
-            date: new Date().toISOString().split('T')[0],
-            time: new Date().toLocaleTimeString('fr-FR'),
-            by: state.currentUser.username
-        };
-        if (!state.employeePayments) state.employeePayments = [];
-        state.employeePayments.push(payment);
-        
-        alert("Paiement enregistré !");
-        updateEmployeePaymentsHistory();
-        updatePaymentMethodBalancesDisplay();
-        updateAdminExtendedDisplay();
-        document.getElementById('employee-payment-amount').value = '';
-    }
-}
-
-function updateEmployeePaymentsHistory() {
-    const container = document.getElementById('employee-payments-history');
-    if (!container) return;
-    
-    let html = '';
-    (state.employeePayments || []).slice().reverse().forEach(p => {
-        html += `<tr><td>${p.username}</td><td>${p.amount} Gdes</td><td>${p.date} ${p.time}</td><td>${p.method}</td></tr>`;
-    });
-    container.innerHTML = html || '<tr><td colspan="4" class="text-center">Aucun paiement</td></tr>';
-}
-
-// ==================== GESTION DES FOURNISSEURS ====================
-function addSupplier() {
-    const name = document.getElementById('new-supplier-name').value.trim();
-    const type = document.getElementById('new-supplier-type').value;
-    const contact = document.getElementById('new-supplier-contact').value.trim();
-    
-    if (!name || !type) {
-        alert("Veuillez entrer au moins le nom et le type du fournisseur !");
-        return;
-    }
-    
-    const newSupplier = {
-        id: Date.now(),
-        name: name,
-        type: type,
-        contact: contact
-    };
-    
-    state.suppliers.push(newSupplier);
-    document.getElementById('new-supplier-name').value = '';
-    document.getElementById('new-supplier-contact').value = '';
-    updateSuppliersList();
-    saveStateToLocalStorage();
-    alert("Fournisseur ajouté !");
-}
-
-function updateSuppliersList() {
-    const container = document.getElementById('suppliers-list');
-    if (!container) return;
-    
-    let html = '';
-    state.suppliers.forEach(s => {
-        html += `<tr><td>${s.name}</td><td>${s.type === 'credit' ? 'Crédit' : 'Comptant'}</td><td>${s.contact || ''}</td><td><button class="btn btn-sm btn-danger" onclick="deleteSupplier(${s.id})">Supprimer</button></td></tr>`;
-    });
-    container.innerHTML = html || '<tr><td colspan="4" class="text-center">Aucun fournisseur</td></tr>';
-}
-
-function deleteSupplier(id) {
-    if (confirm("Supprimer ce fournisseur ?")) {
-        state.suppliers = state.suppliers.filter(s => s.id !== id);
-        updateSuppliersList();
-        saveStateToLocalStorage();
-    }
 }
 
 // ==================== PARAMÈTRES ====================
@@ -1877,7 +2019,6 @@ function updateSettingsDisplay() {
     }
     
     updateUsersList();
-    updateSuppliersList();
     
     // Mettre à jour les selects dans d'autres modules
     if (typeof updateConsultationTypesSelect === 'function') updateConsultationTypesSelect();
@@ -2109,8 +2250,6 @@ function setupMessaging() {
                 targetUsers = state.users.filter(u => u.role === 'pharmacy' && u.active && u.username !== state.currentUser.username);
             } else if (recipient === 'all-admins') {
                 targetUsers = state.users.filter(u => u.role === 'admin' && u.active && u.username !== state.currentUser.username);
-            } else if (recipient === 'all-responsibles') {
-                targetUsers = state.users.filter(u => u.role === 'responsible' && u.active && u.username !== state.currentUser.username);
             }
             
             const messageContent = prompt(`Entrez votre message à ${targetUsers.length} destinataire(s):`);
@@ -2167,8 +2306,7 @@ function updateMessageRecipients() {
         '<option value="all-cashiers">Tous les caissiers</option>' +
         '<option value="all-labs">Tout le laboratoire</option>' +
         '<option value="all-pharmacies">Toute la pharmacie</option>' +
-        '<option value="all-admins">Tous les administrateurs</option>' +
-        '<option value="all-responsibles">Tous les responsables</option>';
+        '<option value="all-admins">Tous les administrateurs</option>';
     
     state.users.forEach(user => {
         if (user.active && user.username !== state.currentUser.username) {
@@ -2315,10 +2453,3 @@ function sendMessage() {
     loadConversation(state.currentConversation);
     updateMessageBadge();
 }
-
-// Rendre accessibles les fonctions nécessaires
-window.savePatientNotes = savePatientNotes;
-window.selectTransactionForEdit = selectTransactionForEdit;
-window.viewCreditHistory = viewCreditHistory;
-window.usePatientCreditPrompt = usePatientCreditPrompt;
-window.deleteSupplier = deleteSupplier;
