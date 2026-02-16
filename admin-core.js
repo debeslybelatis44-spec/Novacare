@@ -195,6 +195,9 @@ function savePrivilege() {
         alert("Privilèges retirés du patient");
     }
     
+    // Sauvegarde dans localStorage pour persister les modifications
+    saveStateToLocalStorage();
+    
     searchAdminPatient();
 }
 
