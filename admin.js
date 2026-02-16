@@ -72,7 +72,7 @@ function searchAdminPatient() {
     document.getElementById('admin-patient-name').textContent = patient.fullName + ' (' + patient.id + ')';
     document.getElementById('admin-patient-details').classList.remove('hidden');
     
-    // Remplir les notes
+    // Remplir les notes (conservé de la version longue)
     document.getElementById('patient-allergies-admin').value = patient.allergies || '';
     document.getElementById('patient-notes-admin').value = patient.notes || '';
     
@@ -513,7 +513,7 @@ function transferToPettyCash() {
     }
 }
 
-// Afficher l'historique des crédits
+// Afficher l'historique des crédits (version courte)
 function viewCreditHistory(patientId = null) {
     if (!patientId) {
         patientId = document.getElementById('admin-patient-search').value.trim();
@@ -1267,7 +1267,7 @@ function printReport() {
     printWindow.print();
 }
 
-// Mettre à jour l'affichage du crédit dans la section patient
+// Mettre à jour l'affichage du crédit dans la section patient (version courte)
 function updateCreditDisplay(patientId) {
     const patient = state.patients.find(p => p.id === patientId);
     const creditAccount = state.creditAccounts[patientId];
@@ -1299,7 +1299,7 @@ function updateCreditDisplay(patientId) {
     }
 }
 
-// Utiliser le crédit d'un patient
+// Utiliser le crédit d'un patient (version courte)
 function usePatientCreditPrompt(patientId = null) {
     if (!patientId) {
         patientId = document.getElementById('admin-patient-search').value.trim();
