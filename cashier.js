@@ -6,7 +6,6 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function setupCashier() {
-    // Taux de change
     document.getElementById('update-exchange-rate').addEventListener('click', () => {
         const newRate = parseFloat(document.getElementById('exchange-rate').value);
         if (!newRate || newRate <= 0) {
@@ -17,10 +16,8 @@ function setupCashier() {
         alert("Taux de change mis à jour!");
     });
     
-    // Recherche patient
     document.getElementById('search-cashier-patient').addEventListener('click', searchCashierPatient);
     
-    // Sélection devise
     const currencyBtns = document.querySelectorAll('.payment-method-currency');
     currencyBtns.forEach(btn => {
         btn.addEventListener('click', function() {
@@ -31,7 +28,6 @@ function setupCashier() {
         });
     });
     
-    // Sélection méthode paiement
     const paymentBtns = document.querySelectorAll('.payment-method');
     paymentBtns.forEach(btn => {
         btn.addEventListener('click', function() {
@@ -40,17 +36,14 @@ function setupCashier() {
         });
     });
     
-    // Calcul monnaie
     document.getElementById('amount-given').addEventListener('input', calculateChange);
     
-    // Actions
     document.getElementById('mark-as-paid').addEventListener('click', markAsPaid);
     document.getElementById('print-invoice').addEventListener('click', printInvoice);
     document.getElementById('print-receipt').addEventListener('click', printReceipt);
     document.getElementById('print-general-sheet').addEventListener('click', printGeneralSheet);
     document.getElementById('print-all-transactions').addEventListener('click', printAllTransactions);
     
-    // Initialiser le solde du caissier s'il n'existe pas
     if (state.currentUser && state.currentUser.role === 'cashier') {
         if (!state.cashierBalances[state.currentUser.username]) {
             state.cashierBalances[state.currentUser.username] = {
@@ -60,15 +53,12 @@ function setupCashier() {
         }
     }
     
-    // Initialiser les soldes par mode de paiement si non définis
     if (!state.paymentMethodBalances) {
         state.paymentMethodBalances = { cash: 0, moncash: 0, natcash: 0, card: 0, external: 0 };
     }
     
-    // Initialiser le label du montant donné
     updateAmountGivenLabel();
     
-    // S'assurer que le patient "Vente directe" existe (créé par la pharmacie, mais on vérifie)
     if (!state.patients.find(p => p.id === 'DIRECT')) {
         state.patients.push({
             id: 'DIRECT',
@@ -102,13 +92,11 @@ function updateAmountGivenLabel() {
 function searchCashierPatient() {
     const search = document.getElementById('cashier-patient-search').value.trim().toLowerCase();
     
-    // Recherche dans les patients
     let patient = state.patients.find(p => 
         p.id.toLowerCase() === search || 
         p.fullName.toLowerCase().includes(search)
     );
     
-    // Si c'est "DIRECT", on le prend (déjà dans la liste)
     if (!patient && search === 'direct') {
         patient = state.patients.find(p => p.id === 'DIRECT');
     }
@@ -122,14 +110,11 @@ function searchCashierPatient() {
     document.getElementById('cashier-patient-id').textContent = patient.id;
     document.getElementById('cashier-patient-details').classList.remove('hidden');
     
-    // Afficher les services à payer
     displayServicesToPay(patient.id);
 }
 
 function displayServicesToPay(patientId) {
     const patient = state.patients.find(p => p.id === patientId);
-    // Récupérer les transactions non payées (unpaid) et les transactions d'hospitalisation (hospitalized)
-    // Pour le patient DIRECT, on prend toutes les ventes directes non payées
     let unpaidTransactions = [];
     if (patientId === 'DIRECT') {
         unpaidTransactions = state.transactions.filter(t => 
@@ -182,7 +167,6 @@ function displayServicesToPay(patientId) {
     document.getElementById('total-to-pay').textContent = total;
     document.getElementById('total-to-pay-usd').textContent = totalUSD.toFixed(2);
     
-    // Si le patient a le privilège crédit, afficher l'option de paiement par crédit
     if (patient && patient.hasCreditPrivilege && patientId !== 'DIRECT') {
         const creditAccount = state.creditAccounts[patientId];
         if (creditAccount && creditAccount.available > 0) {
@@ -201,7 +185,6 @@ function displayServicesToPay(patientId) {
         }
     }
     
-    // Si le patient est hospitalisé, afficher un résumé de la dette
     if (patient && patient.hospitalized && patientId !== 'DIRECT') {
         const hospitalizedTotal = unpaidTransactions
             .filter(t => t.status === 'hospitalized')
@@ -221,7 +204,6 @@ function displayServicesToPay(patientId) {
         }
     }
     
-    // Recalculer la monnaie
     calculateChange();
     updateAmountGivenLabel();
 }
@@ -237,7 +219,6 @@ function calculateChange() {
     let change = 0;
     
     if (currency === 'USD') {
-        // Convertir le montant donné en dollars vers gourdes
         amountGivenInHTG = amountGiven * state.exchangeRate;
         change = amountGivenInHTG - total;
         
@@ -252,7 +233,6 @@ function calculateChange() {
             resultElement.style.color = '#28a745';
         }
     } else {
-        // Montant déjà en gourdes
         change = amountGiven - total;
         
         const resultElement = document.getElementById('change-result');
@@ -278,7 +258,6 @@ function markAsPaid() {
     
     const total = parseFloat(document.getElementById('total-to-pay').textContent);
     
-    // Si le patient a le privilège VIP, marquer directement comme payé
     if (patient && patient.vip) {
         selectedServices.forEach(checkbox => {
             const transactionId = checkbox.dataset.id;
@@ -314,7 +293,6 @@ function markAsPaid() {
     const currency = currencyElement.dataset.currency;
     const paymentMethod = paymentMethodElement.dataset.method;
     
-    // Convertir le montant donné en gourdes si nécessaire
     let amountGivenInHTG = amountGiven;
     if (currency === 'USD') {
         amountGivenInHTG = amountGiven * state.exchangeRate;
@@ -325,7 +303,6 @@ function markAsPaid() {
         return;
     }
     
-    // Traiter chaque service sélectionné
     selectedServices.forEach(checkbox => {
         const transactionId = checkbox.dataset.id;
         const transaction = state.transactions.find(t => t.id === transactionId);
@@ -340,28 +317,22 @@ function markAsPaid() {
             transaction.amountGiven = amountGiven;
             transaction.amountGivenInHTG = amountGivenInHTG;
             
-            // Mettre à jour le solde du caissier
             updateCashierBalance(transaction.amount, patientId, transactionId);
             
-            // Mettre à jour le solde du mode de paiement
             if (state.paymentMethodBalances[paymentMethod] !== undefined) {
                 state.paymentMethodBalances[paymentMethod] += transaction.amount;
             }
             
-            // Mettre à jour la grande caisse (somme de tous les modes)
             state.mainCash += transaction.amount;
         }
     });
     
     alert("Paiement effectué avec succès!");
     
-    // Envoyer des notifications
     sendPaymentNotifications(patientId, selectedServices);
     
-    // Réinitialiser l'affichage pour retourner à la page initiale
     resetCashierInterface();
     
-    // Mettre à jour les statistiques d'administration
     if (typeof updateAdminStats === 'function') updateAdminStats();
     if (typeof updateAdminExtendedDisplay === 'function') updateAdminExtendedDisplay();
 }
@@ -399,7 +370,6 @@ function payWithCredit(patientId) {
         return;
     }
     
-    // Traiter chaque service sélectionné
     selectedServices.forEach(checkbox => {
         const transactionId = checkbox.dataset.id;
         const transactionAmount = parseFloat(checkbox.dataset.amount);
@@ -415,12 +385,10 @@ function payWithCredit(patientId) {
             transaction.amountGiven = 0;
             transaction.amountGivenInHTG = 0;
             
-            // Mettre à jour le compte crédit
             creditAccount.used += transactionAmount;
             creditAccount.available -= transactionAmount;
             patient.creditUsed = creditAccount.used;
             
-            // Ajouter à l'historique du crédit
             creditAccount.history.push({
                 date: new Date().toISOString().split('T')[0],
                 time: new Date().toLocaleTimeString('fr-FR'),
@@ -443,7 +411,6 @@ function payWithCredit(patientId) {
     if (typeof updateAdminExtendedDisplay === 'function') updateAdminExtendedDisplay();
 }
 
-// Nouvelle fonction : encaisser un acompte pour hospitalisation
 function collectHospitalDeposit(patientId) {
     const patient = state.patients.find(p => p.id === patientId);
     if (!patient || !patient.hospitalized) {
@@ -464,7 +431,6 @@ function collectHospitalDeposit(patientId) {
     }
     const paymentMethod = paymentMethodElement.dataset.method;
     
-    // Créer une transaction spéciale pour l'acompte
     const depositTransaction = {
         id: 'DEP' + Date.now(),
         patientId: patientId,
@@ -483,7 +449,6 @@ function collectHospitalDeposit(patientId) {
     
     state.transactions.push(depositTransaction);
     
-    // Mettre à jour les soldes
     updateCashierBalance(depositAmount, patientId, depositTransaction.id);
     if (state.paymentMethodBalances[paymentMethod] !== undefined) {
         state.paymentMethodBalances[paymentMethod] += depositAmount;
@@ -492,7 +457,6 @@ function collectHospitalDeposit(patientId) {
     
     alert(`Acompte de ${depositAmount} Gdes enregistré.`);
     
-    // Recharger l'affichage
     displayServicesToPay(patientId);
 }
 
@@ -539,7 +503,6 @@ function updateCashierBalance(amount, patientId, transactionId) {
     });
 }
 
-// MODIFICATION : Envoyer des notifications de paiement avec son fort
 function sendPaymentNotifications(patientId, selectedServices) {
     const patient = state.patients.find(p => p.id === patientId);
     if (!patient) return;
@@ -551,7 +514,6 @@ function sendPaymentNotifications(patientId, selectedServices) {
     
     const content = `Paiement effectué pour ${patient.fullName} (${patientId}) : ${serviceNames}`;
     
-    // Notifier tous les utilisateurs actifs sauf le caissier lui-même
     const recipients = state.users.filter(u => u.active && u.username !== state.currentUser.username);
     recipients.forEach(user => {
         const message = {
@@ -569,13 +531,11 @@ function sendPaymentNotifications(patientId, selectedServices) {
         state.messages.push(message);
     });
     
-    // Afficher un toast local avec son fort
     showNotification(`Paiement enregistré pour ${patient.fullName}`, 'success');
     
     updateMessageBadge();
 }
 
-// MODIFICATION : Notification plus forte (son plus fort, durée 4 secondes)
 function showNotification(message, type = 'info') {
     const toast = document.createElement('div');
     toast.className = `toast-notification ${type}`;
@@ -583,12 +543,10 @@ function showNotification(message, type = 'info') {
     document.body.appendChild(toast);
     
     try {
-        // Son plus fort
         const audio = new Audio('data:audio/wav;base64,UklGRlwAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YVQAAABJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJ');
-        audio.volume = 1.0; // Maximum
+        audio.volume = 1.0;
         audio.play().catch(e => console.log('Son bloqué par le navigateur'));
         
-        // Second son pour renforcer
         setTimeout(() => {
             const audio2 = new Audio('data:audio/wav;base64,UklGRlwAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YVQAAABJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJ');
             audio2.volume = 1.0;
@@ -600,8 +558,6 @@ function showNotification(message, type = 'info') {
         toast.remove();
     }, 4000);
 }
-
-// ==================== FONCTIONS D'IMPRESSION ====================
 
 function printInvoice() {
     const patientId = document.getElementById('cashier-patient-id').textContent;
@@ -1081,6 +1037,5 @@ function printAllTransactions() {
     printWindow.print();
 }
 
-// Rendre les fonctions globales accessibles
 window.payWithCredit = payWithCredit;
 window.collectHospitalDeposit = collectHospitalDeposit;

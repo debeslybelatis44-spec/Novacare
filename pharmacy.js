@@ -6,21 +6,17 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function setupPharmacy() {
-    // Initialiser les listes déroulantes des emplacements et départements
     initializeLocationSelect();
     initializeDepartmentSelect();
     
-    // Mise à jour dynamique des emplacements selon le département
     const deptSelect = document.getElementById('new-med-department');
     if (deptSelect) {
         deptSelect.addEventListener('change', function() {
             updateLocationOptions(this.value);
         });
-        // Initialisation au cas où un département est pré-sélectionné
         updateLocationOptions(deptSelect.value);
     }
     
-    // Recherche de patient avec le bouton
     const searchPatientBtn = document.getElementById('search-pharmacy-patient');
     if (searchPatientBtn) {
         searchPatientBtn.addEventListener('click', searchPatient);
@@ -28,7 +24,6 @@ function setupPharmacy() {
         console.error("Élément 'search-pharmacy-patient' non trouvé");
     }
     
-    // Recherche de patient avec la touche Entrée
     const patientSearchInput = document.getElementById('pharmacy-patient-search');
     if (patientSearchInput) {
         patientSearchInput.addEventListener('keypress', (e) => {
@@ -38,7 +33,6 @@ function setupPharmacy() {
         });
     }
     
-    // Recherche de médicaments dans le stock
     const searchMedBtn = document.getElementById('search-medication');
     if (searchMedBtn) {
         searchMedBtn.addEventListener('click', searchMedicationInStock);
@@ -46,7 +40,6 @@ function setupPharmacy() {
         console.error("Élément 'search-medication' non trouvé");
     }
     
-    // Recherche de médicaments avec Entrée
     const medSearchInput = document.getElementById('medication-search-stock');
     if (medSearchInput) {
         medSearchInput.addEventListener('keypress', (e) => {
@@ -56,7 +49,6 @@ function setupPharmacy() {
         });
     }
     
-    // Gestion du formulaire de nouveau médicament
     const addNewMedBtn = document.getElementById('add-new-medication');
     if (addNewMedBtn) {
         addNewMedBtn.addEventListener('click', () => {
@@ -77,24 +69,16 @@ function setupPharmacy() {
         saveNewMedBtn.addEventListener('click', addNewMedication);
     }
     
-    // Initialiser l'affichage du stock
     updateMedicationStock();
-    
-    // Mettre à jour la liste des fournisseurs dans le formulaire
     updateSupplierSelect();
     
-    // === VENTE DIRECTE (améliorée) ===
     document.getElementById('add-direct-sale')?.addEventListener('click', addDirectSaleItem);
     document.getElementById('confirm-direct-sale')?.addEventListener('click', confirmDirectSale);
-    
-    // NOUVEAU : Bouton pour imprimer un bon de caisse
     document.getElementById('print-direct-sale-slip')?.addEventListener('click', printDirectSaleSlip);
     
-    // NOUVEAU : Autocomplétion sur le champ de recherche de médicament
     const medNameInput = document.getElementById('direct-sale-med-name');
     if (medNameInput) {
         medNameInput.setAttribute('list', 'medications-datalist');
-        // Créer la datalist si elle n'existe pas
         if (!document.getElementById('medications-datalist')) {
             const datalist = document.createElement('datalist');
             datalist.id = 'medications-datalist';
@@ -104,7 +88,6 @@ function setupPharmacy() {
     }
 }
 
-// -------------------- Recherche patient --------------------
 function searchPatient() {
     const searchInput = document.getElementById('pharmacy-patient-search');
     if (!searchInput) return;
@@ -115,10 +98,8 @@ function searchPatient() {
         return;
     }
     
-    // Rechercher par ID exact (insensible à la casse)
     let patient = state.patients.find(p => p.id.toLowerCase() === searchValue.toLowerCase());
     
-    // Si non trouvé par ID exact, rechercher par nom
     if (!patient) {
         patient = state.patients.find(p => 
             p.fullName.toLowerCase().includes(searchValue.toLowerCase())
@@ -166,9 +147,7 @@ function displayPatientDetails(patient) {
     
     let html = '';
     medTransactions.forEach(transaction => {
-        // MODIFICATION : Gérer les transactions avec plusieurs articles (vente directe)
         if (transaction.items && Array.isArray(transaction.items)) {
-            // C'est une vente directe avec plusieurs articles
             const allDelivered = transaction.items.every(item => item.delivered);
             const canDeliver = transaction.status === 'paid' && !allDelivered;
             
@@ -200,7 +179,6 @@ function displayPatientDetails(patient) {
                 </div>
             `;
         } else {
-            // Transaction simple (un seul médicament)
             const med = state.medicationStock.find(m => m.id === transaction.medicationId);
             const canDeliver = transaction.status === 'paid' && 
                               (!transaction.deliveryStatus || transaction.deliveryStatus !== 'delivered');
@@ -244,14 +222,12 @@ function displayPatientDetails(patient) {
     document.getElementById('deliver-medications').disabled = !hasDeliverable;
 }
 
-// -------------------- Stock --------------------
 function searchMedicationInStock() {
     const searchInput = document.getElementById('medication-search-stock');
     if (!searchInput) return;
     const searchValue = searchInput.value.trim().toLowerCase();
     
     if (!searchValue) {
-        // Si la recherche est vide, afficher tout le stock
         updateMedicationStock();
         return;
     }
@@ -277,7 +253,6 @@ function displayFilteredMedications(medications) {
         let statusClass = '';
         let statusText = 'Normal';
         
-        // Vérifier l'expiration
         if (med.expirationDate) {
             const expDate = new Date(med.expirationDate);
             const diffTime = expDate - today;
@@ -292,7 +267,6 @@ function displayFilteredMedications(medications) {
             }
         }
         
-        // Vérifier le stock
         if (med.quantity === 0) {
             statusClass = 'out-of-stock';
             statusText = 'Rupture';
@@ -301,7 +275,6 @@ function displayFilteredMedications(medications) {
             statusText = 'Stock faible';
         }
         
-        // Formater la date d'expiration
         let expirationDisplay = 'N/A';
         if (med.expirationDate) {
             const expDate = new Date(med.expirationDate);
@@ -317,7 +290,6 @@ function displayFilteredMedications(medications) {
             }
         }
         
-        // Récupérer le nom du fournisseur
         let supplierName = '-';
         if (med.supplier) {
             const supplier = state.suppliers.find(s => s.id === med.supplier);
@@ -355,8 +327,6 @@ function displayFilteredMedications(medications) {
 }
 
 function initializeLocationSelect() {
-    // On ne remplit pas directement, on utilise updateLocationOptions
-    // Juste pour s'assurer que le select existe
     const select = document.getElementById('new-med-location');
     if (select) {
         select.innerHTML = '<option value="">Sélectionner un emplacement</option>';
@@ -386,7 +356,6 @@ function initializeDepartmentSelect() {
     });
 }
 
-// Fonction pour déterminer si un département est un type de sérum
 function isSerumDepartment(department) {
     const serumTypes = [
         'Sérum',
@@ -402,25 +371,19 @@ function isSerumDepartment(department) {
     return serumTypes.includes(department);
 }
 
-// Met à jour les options de l'emplacement en fonction du département sélectionné
 function updateLocationOptions(department) {
     const locationSelect = document.getElementById('new-med-location');
     if (!locationSelect) return;
     
-    // Sauvegarder la valeur actuelle si elle existe
     const currentValue = locationSelect.value;
-    
-    // Vider le select
     locationSelect.innerHTML = '<option value="">Sélectionner un emplacement</option>';
     
     if (isSerumDepartment(department)) {
-        // Uniquement les emplacements Serum-1 à Serum-10
         for (let i = 1; i <= 10; i++) {
             const value = `Serum-${i}`;
             locationSelect.innerHTML += `<option value="${value}">${value}</option>`;
         }
     } else {
-        // Sections A, B, C, D
         for (let i = 1; i <= 20; i++) {
             locationSelect.innerHTML += `<option value="A${i}">A${i}</option>`;
         }
@@ -435,7 +398,6 @@ function updateLocationOptions(department) {
         }
     }
     
-    // Restaurer la valeur si elle est toujours valide
     if (currentValue) {
         const optionExists = Array.from(locationSelect.options).some(opt => opt.value === currentValue);
         if (optionExists) {
@@ -454,7 +416,6 @@ function updateSupplierSelect() {
     });
 }
 
-// MODIFICATION : Gestion de la délivrance pour les ventes directes multi-articles
 function deliverDirectSale(transactionId) {
     const transaction = state.transactions.find(t => t.id === transactionId);
     if (!transaction) {
@@ -467,7 +428,6 @@ function deliverDirectSale(transactionId) {
         return;
     }
     
-    // Vérifier que tous les articles sont disponibles
     for (let item of transaction.items) {
         if (item.delivered) continue;
         const med = state.medicationStock.find(m => m.id === item.medId);
@@ -481,7 +441,6 @@ function deliverDirectSale(transactionId) {
         }
     }
     
-    // Déduire du stock et marquer comme délivré
     transaction.items.forEach(item => {
         if (!item.delivered) {
             const med = state.medicationStock.find(m => m.id === item.medId);
@@ -498,7 +457,6 @@ function deliverDirectSale(transactionId) {
     
     alert("Médicaments délivrés avec succès!");
     
-    // Recharger les informations du patient
     const currentPatientId = document.getElementById('pharmacy-patient-id').textContent;
     if (currentPatientId) {
         const patient = state.patients.find(p => p.id === currentPatientId);
@@ -516,7 +474,6 @@ function deliverMedication(transactionId) {
         return;
     }
     
-    // Si c'est une vente directe avec plusieurs articles, rediriger
     if (transaction.items) {
         return deliverDirectSale(transactionId);
     }
@@ -542,7 +499,6 @@ function deliverMedication(transactionId) {
     
     alert("Médicament délivré avec succès!");
     
-    // Recharger les informations du patient
     const currentPatientId = document.getElementById('pharmacy-patient-id').textContent;
     if (currentPatientId) {
         const patient = state.patients.find(p => p.id === currentPatientId);
@@ -602,14 +558,12 @@ function addNewMedication() {
         return;
     }
     
-    // Vérifier si un médicament avec le même nom existe déjà (insensible à la casse)
     const existingMed = state.medicationStock.find(m => m.name.toLowerCase() === name.toLowerCase());
     if (existingMed) {
         alert(`Un médicament avec le nom "${name}" existe déjà (ID: ${existingMed.id}). Veuillez utiliser un nom différent ou modifier l\'existant.`);
         return;
     }
     
-    // Vérifier la cohérence entre département et emplacement
     if (isSerumDepartment(department) && !location.startsWith('Serum-')) {
         alert("Pour un département de type sérum, l'emplacement doit être dans la zone Serum (Serum-1 à Serum-10).");
         return;
@@ -619,7 +573,6 @@ function addNewMedication() {
         return;
     }
     
-    // Vérifier si la date d'expiration est dans le passé
     if (expirationDate) {
         const today = new Date();
         const expDate = new Date(expirationDate);
@@ -655,7 +608,6 @@ function addNewMedication() {
     resetNewMedicationForm();
     
     updateMedicationStock();
-    // NOUVEAU : Mettre à jour la datalist d'autocomplétion
     populateMedicationDatalist();
     alert("Médicament ajouté avec succès!");
 }
@@ -671,7 +623,6 @@ function updateMedicationStock() {
         let statusClass = '';
         let statusText = 'Normal';
         
-        // Vérifier l'expiration
         if (med.expirationDate) {
             const expDate = new Date(med.expirationDate);
             const diffTime = expDate - today;
@@ -686,7 +637,6 @@ function updateMedicationStock() {
             }
         }
         
-        // Vérifier le stock
         if (med.quantity === 0) {
             statusClass = 'out-of-stock';
             statusText = 'Rupture';
@@ -695,7 +645,6 @@ function updateMedicationStock() {
             statusText = 'Stock faible';
         }
         
-        // Formater la date d'expiration
         let expirationDisplay = 'N/A';
         if (med.expirationDate) {
             const expDate = new Date(med.expirationDate);
@@ -711,7 +660,6 @@ function updateMedicationStock() {
             }
         }
         
-        // Récupérer le nom du fournisseur
         let supplierName = '-';
         if (med.supplier) {
             const supplier = state.suppliers.find(s => s.id === med.supplier);
@@ -746,7 +694,6 @@ function updateMedicationStock() {
     
     updateLowStockMedications();
     updateExpiringMedications();
-    // NOUVEAU : Mettre à jour la datalist d'autocomplétion
     populateMedicationDatalist();
 }
 
@@ -808,7 +755,6 @@ function updateExpiringMedications() {
     
     let html = '<table class="table-container"><thead><tr><th>Médicament</th><th>Département</th><th>Date expiration</th><th>Stock</th><th>Emplacement</th><th>Statut</th></tr></thead><tbody>';
     
-    // Afficher d'abord les expirés
     expired.forEach(med => {
         const expDate = new Date(med.expirationDate);
         html += `
@@ -823,7 +769,6 @@ function updateExpiringMedications() {
         `;
     });
     
-    // Puis les bientôt expirés
     expiringSoon.forEach(med => {
         const expDate = new Date(med.expirationDate);
         const diffTime = expDate - today;
@@ -858,7 +803,6 @@ function restockMedication(medId) {
     if (quantity && !isNaN(quantity) && parseInt(quantity) > 0) {
         med.quantity += parseInt(quantity);
         
-        // Demander si on veut aussi mettre à jour la date d'expiration
         const updateExpiration = confirm("Voulez-vous mettre à jour la date d'expiration?");
         if (updateExpiration) {
             const newExpiration = prompt("Nouvelle date d'expiration (YYYY-MM-DD):", med.expirationDate || '');
@@ -881,7 +825,6 @@ function editMedication(medId) {
     const med = state.medicationStock.find(m => m.id === medId);
     if (!med) return;
     
-    // Créer un formulaire modal pour modifier le médicament
     let formHtml = `
         <div class="card">
             <h4>Modifier le médicament: ${med.name}</h4>
@@ -956,7 +899,6 @@ function editMedication(medId) {
     document.body.appendChild(modal);
     modal.classList.remove('hidden');
     
-    // Ajouter un écouteur pour mettre à jour les emplacements si le département change
     const deptSelect = document.getElementById('edit-med-department');
     if (deptSelect) {
         deptSelect.addEventListener('change', function() {
@@ -1000,13 +942,11 @@ function getLocationOptions(department, selectedLocation) {
     let options = '<option value="">Sélectionner un emplacement</option>';
     
     if (isSerumDepartment(department)) {
-        // Uniquement les emplacements Serum-1 à Serum-10
         for (let i = 1; i <= 10; i++) {
             const value = `Serum-${i}`;
             options += `<option value="${value}" ${value === selectedLocation ? 'selected' : ''}>${value}</option>`;
         }
     } else {
-        // Sections A, B, C, D
         for (let i = 1; i <= 20; i++) {
             const value = `A${i}`;
             options += `<option value="${value}" ${value === selectedLocation ? 'selected' : ''}>${value}</option>`;
@@ -1034,7 +974,6 @@ function saveMedicationEdit(medId) {
     
     const newName = document.getElementById('edit-med-name').value.trim();
     
-    // Vérifier si le nouveau nom est déjà utilisé par un autre médicament
     const existingMed = state.medicationStock.find(m => 
         m.id !== medId && m.name.toLowerCase() === newName.toLowerCase()
     );
@@ -1046,7 +985,6 @@ function saveMedicationEdit(medId) {
     const newDepartment = document.getElementById('edit-med-department').value;
     const newLocation = document.getElementById('edit-med-location').value;
     
-    // Vérifier la cohérence entre département et emplacement
     if (isSerumDepartment(newDepartment) && !newLocation.startsWith('Serum-')) {
         alert("Pour un département de type sérum, l'emplacement doit être dans la zone Serum (Serum-1 à Serum-10).");
         return;
@@ -1074,14 +1012,11 @@ function saveMedicationEdit(medId) {
     alert("Médicament modifié avec succès!");
     document.getElementById('edit-medication-modal').remove();
     updateMedicationStock();
-    // NOUVEAU : Mettre à jour la datalist d'autocomplétion
     populateMedicationDatalist();
 }
 
-// ==================== VENTE DIRECTE ====================
-let directSaleItems = []; // tableau des objets { medId, name, quantity, price, total }
+let directSaleItems = [];
 
-// NOUVEAU : Remplir la datalist des médicaments
 function populateMedicationDatalist() {
     const datalist = document.getElementById('medications-datalist');
     if (!datalist) return;
@@ -1103,7 +1038,6 @@ function addDirectSaleItem() {
         return;
     }
     
-    // Chercher le médicament par nom exact (insensible à la casse)
     const med = state.medicationStock.find(m => 
         m.name.toLowerCase() === medName.toLowerCase() || 
         (m.genericName && m.genericName.toLowerCase() === medName.toLowerCase())
@@ -1119,7 +1053,6 @@ function addDirectSaleItem() {
         return;
     }
     
-    // Vérifier si déjà dans la liste
     const existing = directSaleItems.find(item => item.medId === med.id);
     if (existing) {
         existing.quantity += quantity;
@@ -1165,14 +1098,12 @@ function removeDirectSaleItem(index) {
     updateDirectSaleDisplay();
 }
 
-// NOUVEAU : Impression d'un bon de caisse pour vente directe
 function printDirectSaleSlip() {
     if (directSaleItems.length === 0) {
         alert("Aucun article à vendre.");
         return;
     }
     
-    // S'assurer que le patient "Vente directe" existe
     let directPatient = state.patients.find(p => p.id === 'DIRECT');
     if (!directPatient) {
         directPatient = {
@@ -1191,7 +1122,6 @@ function printDirectSaleSlip() {
     
     const totalAmount = directSaleItems.reduce((sum, item) => sum + item.total, 0);
     
-    // Créer la transaction
     const transaction = {
         id: 'DS' + Date.now(),
         patientId: 'DIRECT',
@@ -1210,7 +1140,6 @@ function printDirectSaleSlip() {
     
     state.transactions.push(transaction);
     
-    // Réserver les quantités
     directSaleItems.forEach(item => {
         const med = state.medicationStock.find(m => m.id === item.medId);
         if (med) {
@@ -1218,24 +1147,16 @@ function printDirectSaleSlip() {
         }
     });
     
-    // Notifier la caisse
     sendNotificationToCashier(transaction);
     
-    // Imprimer le bon
     printDirectSaleSlipDocument(transaction);
     
-    // Réinitialiser le panier
     directSaleItems = [];
     updateDirectSaleDisplay();
-    
-    // Rafraîchir le stock
     updateMedicationStock();
-    
-    // Notification locale forte
     showNotification(`Bon de caisse imprimé pour ${totalAmount} Gdes. Envoyez le patient à la caisse.`, 'success');
 }
 
-// NOUVEAU : Document à imprimer pour le bon de caisse
 function printDirectSaleSlipDocument(transaction) {
     const slipContent = `
         <div class="print-receipt" style="width: 80mm; margin: 0 auto; font-family: Arial, sans-serif;">
@@ -1291,7 +1212,6 @@ function printDirectSaleSlipDocument(transaction) {
     printWindow.print();
 }
 
-// NOUVEAU : Envoyer une notification forte à la caisse
 function sendNotificationToCashier(transaction) {
     const content = `Nouvelle vente directe: ${transaction.amount} Gdes. Transaction #${transaction.id}. Patient à la caisse.`;
     
@@ -1312,18 +1232,15 @@ function sendNotificationToCashier(transaction) {
         state.messages.push(message);
     });
     
-    // Notification locale pour le pharmacien
     showNotification(`Notification envoyée à la caisse`, 'info');
 }
 
-// MODIFICATION : Version de confirmDirectSale adaptée (assure l'existence du patient DIRECT et notification)
 function confirmDirectSale() {
     if (directSaleItems.length === 0) {
         alert("Aucun article à vendre.");
         return;
     }
     
-    // S'assurer que le patient "Vente directe" existe
     let directPatient = state.patients.find(p => p.id === 'DIRECT');
     if (!directPatient) {
         directPatient = {
@@ -1367,7 +1284,6 @@ function confirmDirectSale() {
         }
     });
     
-    // Notifier la caisse
     sendNotificationToCashier(transaction);
     
     alert(`Vente enregistrée. Transaction #${transaction.id} créée pour ${totalAmount} Gdes. Le client doit payer à la caisse.`);
@@ -1377,9 +1293,8 @@ function confirmDirectSale() {
     updateMedicationStock();
 }
 
-// Rendre accessible globalement
 window.deliverMedication = deliverMedication;
-window.deliverDirectSale = deliverDirectSale; // NOUVEAU
+window.deliverDirectSale = deliverDirectSale;
 window.restockMedication = restockMedication;
 window.editMedication = editMedication;
 window.saveMedicationEdit = saveMedicationEdit;
