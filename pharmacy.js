@@ -83,12 +83,9 @@ function setupPharmacy() {
     // Mettre à jour la liste des fournisseurs dans le formulaire
     updateSupplierSelect();
     
-    // === Vente directe ===
+    // === NOUVEAU : Vente directe ===
     document.getElementById('add-direct-sale')?.addEventListener('click', addDirectSaleItem);
     document.getElementById('confirm-direct-sale')?.addEventListener('click', confirmDirectSale);
-    
-    // Initialiser l'autocomplétion pour la vente directe
-    setupDirectSaleAutocomplete();
 }
 
 // -------------------- Recherche patient --------------------
@@ -362,8 +359,11 @@ function updateLocationOptions(department) {
     locationSelect.innerHTML = '<option value="">Sélectionner un emplacement</option>';
     
     if (isSerumDepartment(department)) {
-        // Pour les sérums, un seul emplacement "Serum" (simplifié)
-        locationSelect.innerHTML += '<option value="Serum">Serum</option>';
+        // Uniquement les emplacements Serum-1 à Serum-10
+        for (let i = 1; i <= 10; i++) {
+            const value = `Serum-${i}`;
+            locationSelect.innerHTML += `<option value="${value}">${value}</option>`;
+        }
     } else {
         // Sections A, B, C, D
         for (let i = 1; i <= 20; i++) {
@@ -495,12 +495,12 @@ function addNewMedication() {
     }
     
     // Vérifier la cohérence entre département et emplacement
-    if (isSerumDepartment(department) && location !== 'Serum') {
-        alert("Pour un département de type sérum, l'emplacement doit être 'Serum'.");
+    if (isSerumDepartment(department) && !location.startsWith('Serum-')) {
+        alert("Pour un département de type sérum, l'emplacement doit être dans la zone Serum (Serum-1 à Serum-10).");
         return;
     }
-    if (!isSerumDepartment(department) && location === 'Serum') {
-        alert("L'emplacement 'Serum' est réservé aux sérums. Veuillez choisir un emplacement dans les sections A, B, C ou D.");
+    if (!isSerumDepartment(department) && location.startsWith('Serum-')) {
+        alert("Les emplacements Serum sont réservés aux sérums. Veuillez choisir un emplacement dans les sections A, B, C ou D.");
         return;
     }
     
@@ -629,7 +629,6 @@ function updateMedicationStock() {
     
     updateLowStockMedications();
     updateExpiringMedications();
-    updateDirectSaleDatalist(); // Mettre à jour la datalist pour l'autocomplétion
 }
 
 function updateLowStockMedications() {
@@ -882,8 +881,11 @@ function getLocationOptions(department, selectedLocation) {
     let options = '<option value="">Sélectionner un emplacement</option>';
     
     if (isSerumDepartment(department)) {
-        // Pour les sérums, un seul emplacement "Serum"
-        options += `<option value="Serum" ${selectedLocation === 'Serum' ? 'selected' : ''}>Serum</option>`;
+        // Uniquement les emplacements Serum-1 à Serum-10
+        for (let i = 1; i <= 10; i++) {
+            const value = `Serum-${i}`;
+            options += `<option value="${value}" ${value === selectedLocation ? 'selected' : ''}>${value}</option>`;
+        }
     } else {
         // Sections A, B, C, D
         for (let i = 1; i <= 20; i++) {
@@ -926,12 +928,12 @@ function saveMedicationEdit(medId) {
     const newLocation = document.getElementById('edit-med-location').value;
     
     // Vérifier la cohérence entre département et emplacement
-    if (isSerumDepartment(newDepartment) && newLocation !== 'Serum') {
-        alert("Pour un département de type sérum, l'emplacement doit être 'Serum'.");
+    if (isSerumDepartment(newDepartment) && !newLocation.startsWith('Serum-')) {
+        alert("Pour un département de type sérum, l'emplacement doit être dans la zone Serum (Serum-1 à Serum-10).");
         return;
     }
-    if (!isSerumDepartment(newDepartment) && newLocation === 'Serum') {
-        alert("L'emplacement 'Serum' est réservé aux sérums. Veuillez choisir un emplacement dans les sections A, B, C ou D.");
+    if (!isSerumDepartment(newDepartment) && newLocation.startsWith('Serum-')) {
+        alert("Les emplacements Serum sont réservés aux sérums. Veuillez choisir un emplacement dans les sections A, B, C ou D.");
         return;
     }
     
@@ -958,42 +960,9 @@ function saveMedicationEdit(medId) {
 // ==================== VENTE DIRECTE ====================
 let directSaleItems = []; // tableau des objets { medId, name, quantity, price, total }
 
-// Initialiser l'autocomplétion pour le champ de recherche de médicament
-function setupDirectSaleAutocomplete() {
-    const input = document.getElementById('direct-sale-med-name');
-    if (!input) return;
-    
-    // Créer une datalist si elle n'existe pas
-    let datalist = document.getElementById('medication-datalist');
-    if (!datalist) {
-        datalist = document.createElement('datalist');
-        datalist.id = 'medication-datalist';
-        document.body.appendChild(datalist);
-    }
-    input.setAttribute('list', 'medication-datalist');
-    
-    // Remplir la datalist avec les noms des médicaments
-    updateDirectSaleDatalist();
-}
-
-function updateDirectSaleDatalist() {
-    const datalist = document.getElementById('medication-datalist');
-    if (!datalist) return;
-    
-    datalist.innerHTML = '';
-    state.medicationStock.forEach(med => {
-        const option = document.createElement('option');
-        option.value = med.name; // Le nom complet
-        if (med.genericName) {
-            option.textContent = `${med.name} (${med.genericName})`;
-        }
-        datalist.appendChild(option);
-    });
-}
-
 function addDirectSaleItem() {
     const searchInput = document.getElementById('direct-sale-med-name');
-    const medName = searchInput.value.trim(); // Le nom complet sélectionné
+    const medName = searchInput.value.trim().toLowerCase();
     const quantity = parseInt(document.getElementById('direct-sale-quantity').value);
     
     if (!medName || !quantity || quantity <= 0) {
@@ -1001,11 +970,14 @@ function addDirectSaleItem() {
         return;
     }
     
-    // Chercher le médicament par nom exact (car on utilise la datalist)
-    const med = state.medicationStock.find(m => m.name === medName);
+    // Chercher le médicament par nom (insensible à la casse)
+    const med = state.medicationStock.find(m => 
+        m.name.toLowerCase().includes(medName) || 
+        (m.genericName && m.genericName.toLowerCase().includes(medName))
+    );
     
     if (!med) {
-        alert("Médicament non trouvé dans le stock. Veuillez sélectionner un nom dans la liste.");
+        alert("Médicament non trouvé dans le stock.");
         return;
     }
     
@@ -1093,7 +1065,7 @@ function confirmDirectSale() {
     
     state.transactions.push(transaction);
     
-    // Réserver les quantités
+    // Réserver les quantités (optionnel, on pourrait aussi les déduire immédiatement si on veut, mais généralement on attend le paiement)
     directSaleItems.forEach(item => {
         const med = state.medicationStock.find(m => m.id === item.medId);
         if (med) {
@@ -1104,9 +1076,6 @@ function confirmDirectSale() {
     // Notifier la caisse
     sendNotificationToCashier(transaction);
     
-    // Jouer un son de notification (4 secondes)
-    playNotificationSound(4000, 880, 1);
-    
     // Afficher un message avec le numéro de transaction
     alert(`Vente enregistrée. Transaction #${transaction.id} créée pour ${totalAmount} Gdes. Le client doit payer à la caisse.`);
     
@@ -1116,29 +1085,6 @@ function confirmDirectSale() {
     
     // Rafraîchir le stock (affichage)
     updateMedicationStock();
-}
-
-// Fonction pour jouer un son de notification
-function playNotificationSound(duration = 4000, frequency = 880, volume = 1) {
-    try {
-        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        const oscillator = audioCtx.createOscillator();
-        const gainNode = audioCtx.createGain();
-        
-        oscillator.type = 'sine';
-        oscillator.frequency.setValueAtTime(frequency, audioCtx.currentTime);
-        
-        gainNode.gain.setValueAtTime(volume, audioCtx.currentTime);
-        gainNode.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration / 1000);
-        
-        oscillator.connect(gainNode);
-        gainNode.connect(audioCtx.destination);
-        
-        oscillator.start();
-        oscillator.stop(audioCtx.currentTime + duration / 1000);
-    } catch (e) {
-        console.warn("Impossible de jouer le son de notification :", e);
-    }
 }
 
 // Rendre accessible globalement
