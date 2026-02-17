@@ -83,9 +83,25 @@ function setupPharmacy() {
     // Mettre à jour la liste des fournisseurs dans le formulaire
     updateSupplierSelect();
     
-    // === NOUVEAU : Vente directe ===
+    // === VENTE DIRECTE (améliorée) ===
     document.getElementById('add-direct-sale')?.addEventListener('click', addDirectSaleItem);
     document.getElementById('confirm-direct-sale')?.addEventListener('click', confirmDirectSale);
+    
+    // NOUVEAU : Bouton pour imprimer un bon de caisse
+    document.getElementById('print-direct-sale-slip')?.addEventListener('click', printDirectSaleSlip);
+    
+    // NOUVEAU : Autocomplétion sur le champ de recherche de médicament
+    const medNameInput = document.getElementById('direct-sale-med-name');
+    if (medNameInput) {
+        medNameInput.setAttribute('list', 'medications-datalist');
+        // Créer la datalist si elle n'existe pas
+        if (!document.getElementById('medications-datalist')) {
+            const datalist = document.createElement('datalist');
+            datalist.id = 'medications-datalist';
+            document.body.appendChild(datalist);
+        }
+        populateMedicationDatalist();
+    }
 }
 
 // -------------------- Recherche patient --------------------
@@ -150,42 +166,81 @@ function displayPatientDetails(patient) {
     
     let html = '';
     medTransactions.forEach(transaction => {
-        const med = state.medicationStock.find(m => m.id === transaction.medicationId);
-        const canDeliver = transaction.status === 'paid' && 
-                          (!transaction.deliveryStatus || transaction.deliveryStatus !== 'delivered');
-        
-        html += `
-            <div class="card mb-2">
-                <div class="d-flex justify-between">
-                    <div>
-                        <h5>${transaction.service}</h5>
-                        <p>Posologie: ${transaction.dosage || 'Non spécifié'}</p>
-                        <p>Statut paiement: <span class="${transaction.status === 'paid' ? 'status-paid' : 'status-unpaid'}">${transaction.status === 'paid' ? 'Payé' : 'Non payé'}</span></p>
-                        <p>Livraison: <span class="${transaction.deliveryStatus === 'delivered' ? 'status-paid' : 'status-unpaid'}">${transaction.deliveryStatus || 'En attente'}</span></p>
-                        ${med ? `<p>Stock disponible: ${med.quantity} ${med.unit}</p>` : ''}
-                    </div>
-                    <div>
-                        ${canDeliver ? `
-                            <button class="btn btn-success" onclick="deliverMedication('${transaction.id}')">
-                                Délivrer
-                            </button>
-                        ` : ''}
-                        ${transaction.deliveryStatus === 'delivered' ? `
-                            <span class="text-success"><i class="fas fa-check"></i> Déjà délivré</span>
-                        ` : ''}
+        // MODIFICATION : Gérer les transactions avec plusieurs articles (vente directe)
+        if (transaction.items && Array.isArray(transaction.items)) {
+            // C'est une vente directe avec plusieurs articles
+            const allDelivered = transaction.items.every(item => item.delivered);
+            const canDeliver = transaction.status === 'paid' && !allDelivered;
+            
+            html += `
+                <div class="card mb-2">
+                    <div class="d-flex justify-between">
+                        <div>
+                            <h5>${transaction.service}</h5>
+                            <p>Articles:</p>
+                            <ul>
+                                ${transaction.items.map(item => `
+                                    <li>${item.name} x${item.quantity} - ${item.delivered ? 'Délivré' : 'En attente'}</li>
+                                `).join('')}
+                            </ul>
+                            <p>Statut paiement: <span class="${transaction.status === 'paid' ? 'status-paid' : 'status-unpaid'}">${transaction.status === 'paid' ? 'Payé' : 'Non payé'}</span></p>
+                            <p>Livraison: <span class="${allDelivered ? 'status-paid' : 'status-unpaid'}">${allDelivered ? 'Tout délivré' : 'En attente'}</span></p>
+                        </div>
+                        <div>
+                            ${canDeliver ? `
+                                <button class="btn btn-success" onclick="deliverDirectSale('${transaction.id}')">
+                                    Délivrer tout
+                                </button>
+                            ` : ''}
+                            ${allDelivered ? `
+                                <span class="text-success"><i class="fas fa-check"></i> Déjà délivré</span>
+                            ` : ''}
+                        </div>
                     </div>
                 </div>
-            </div>
-        `;
+            `;
+        } else {
+            // Transaction simple (un seul médicament)
+            const med = state.medicationStock.find(m => m.id === transaction.medicationId);
+            const canDeliver = transaction.status === 'paid' && 
+                              (!transaction.deliveryStatus || transaction.deliveryStatus !== 'delivered');
+            
+            html += `
+                <div class="card mb-2">
+                    <div class="d-flex justify-between">
+                        <div>
+                            <h5>${transaction.service}</h5>
+                            <p>Posologie: ${transaction.dosage || 'Non spécifié'}</p>
+                            <p>Statut paiement: <span class="${transaction.status === 'paid' ? 'status-paid' : 'status-unpaid'}">${transaction.status === 'paid' ? 'Payé' : 'Non payé'}</span></p>
+                            <p>Livraison: <span class="${transaction.deliveryStatus === 'delivered' ? 'status-paid' : 'status-unpaid'}">${transaction.deliveryStatus || 'En attente'}</span></p>
+                            ${med ? `<p>Stock disponible: ${med.quantity} ${med.unit}</p>` : ''}
+                        </div>
+                        <div>
+                            ${canDeliver ? `
+                                <button class="btn btn-success" onclick="deliverMedication('${transaction.id}')">
+                                    Délivrer
+                                </button>
+                            ` : ''}
+                            ${transaction.deliveryStatus === 'delivered' ? `
+                                <span class="text-success"><i class="fas fa-check"></i> Déjà délivré</span>
+                            ` : ''}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
     });
     
     document.getElementById('pharmacy-prescriptions-list').innerHTML = html || '<p>Aucun médicament prescrit.</p>';
     document.getElementById('pharmacy-patient-details').classList.remove('hidden');
     
-    const hasDeliverable = medTransactions.some(t => 
-        t.status === 'paid' && 
-        (!t.deliveryStatus || t.deliveryStatus !== 'delivered')
-    );
+    const hasDeliverable = medTransactions.some(t => {
+        if (t.items) {
+            return t.status === 'paid' && !t.items.every(item => item.delivered);
+        } else {
+            return t.status === 'paid' && (!t.deliveryStatus || t.deliveryStatus !== 'delivered');
+        }
+    });
     document.getElementById('deliver-medications').disabled = !hasDeliverable;
 }
 
@@ -399,11 +454,71 @@ function updateSupplierSelect() {
     });
 }
 
+// MODIFICATION : Gestion de la délivrance pour les ventes directes multi-articles
+function deliverDirectSale(transactionId) {
+    const transaction = state.transactions.find(t => t.id === transactionId);
+    if (!transaction) {
+        alert("Transaction non trouvée!");
+        return;
+    }
+    
+    if (!transaction.items) {
+        alert("Transaction invalide pour cette fonction.");
+        return;
+    }
+    
+    // Vérifier que tous les articles sont disponibles
+    for (let item of transaction.items) {
+        if (item.delivered) continue;
+        const med = state.medicationStock.find(m => m.id === item.medId);
+        if (!med) {
+            alert(`Médicament ${item.name} non trouvé dans le stock!`);
+            return;
+        }
+        if (med.quantity < item.quantity) {
+            alert(`Stock insuffisant pour ${item.name}. Disponible: ${med.quantity}, demandé: ${item.quantity}`);
+            return;
+        }
+    }
+    
+    // Déduire du stock et marquer comme délivré
+    transaction.items.forEach(item => {
+        if (!item.delivered) {
+            const med = state.medicationStock.find(m => m.id === item.medId);
+            med.quantity -= item.quantity;
+            med.reserved = (med.reserved || 0) - item.quantity;
+            item.delivered = true;
+        }
+    });
+    
+    transaction.deliveryStatus = 'delivered';
+    transaction.deliveryDate = new Date().toISOString().split('T')[0];
+    transaction.deliveryTime = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+    transaction.deliveredBy = state.currentUser.username;
+    
+    alert("Médicaments délivrés avec succès!");
+    
+    // Recharger les informations du patient
+    const currentPatientId = document.getElementById('pharmacy-patient-id').textContent;
+    if (currentPatientId) {
+        const patient = state.patients.find(p => p.id === currentPatientId);
+        if (patient) {
+            displayPatientDetails(patient);
+        }
+    }
+    updateMedicationStock();
+}
+
 function deliverMedication(transactionId) {
     const transaction = state.transactions.find(t => t.id === transactionId);
     if (!transaction) {
         alert("Transaction non trouvée!");
         return;
+    }
+    
+    // Si c'est une vente directe avec plusieurs articles, rediriger
+    if (transaction.items) {
+        return deliverDirectSale(transactionId);
     }
     
     const med = state.medicationStock.find(m => m.id === transaction.medicationId);
@@ -540,6 +655,8 @@ function addNewMedication() {
     resetNewMedicationForm();
     
     updateMedicationStock();
+    // NOUVEAU : Mettre à jour la datalist d'autocomplétion
+    populateMedicationDatalist();
     alert("Médicament ajouté avec succès!");
 }
 
@@ -629,6 +746,8 @@ function updateMedicationStock() {
     
     updateLowStockMedications();
     updateExpiringMedications();
+    // NOUVEAU : Mettre à jour la datalist d'autocomplétion
+    populateMedicationDatalist();
 }
 
 function updateLowStockMedications() {
@@ -955,14 +1074,28 @@ function saveMedicationEdit(medId) {
     alert("Médicament modifié avec succès!");
     document.getElementById('edit-medication-modal').remove();
     updateMedicationStock();
+    // NOUVEAU : Mettre à jour la datalist d'autocomplétion
+    populateMedicationDatalist();
 }
 
 // ==================== VENTE DIRECTE ====================
 let directSaleItems = []; // tableau des objets { medId, name, quantity, price, total }
 
+// NOUVEAU : Remplir la datalist des médicaments
+function populateMedicationDatalist() {
+    const datalist = document.getElementById('medications-datalist');
+    if (!datalist) return;
+    datalist.innerHTML = '';
+    state.medicationStock.forEach(med => {
+        const option = document.createElement('option');
+        option.value = med.name;
+        datalist.appendChild(option);
+    });
+}
+
 function addDirectSaleItem() {
     const searchInput = document.getElementById('direct-sale-med-name');
-    const medName = searchInput.value.trim().toLowerCase();
+    const medName = searchInput.value.trim();
     const quantity = parseInt(document.getElementById('direct-sale-quantity').value);
     
     if (!medName || !quantity || quantity <= 0) {
@@ -970,14 +1103,14 @@ function addDirectSaleItem() {
         return;
     }
     
-    // Chercher le médicament par nom (insensible à la casse)
+    // Chercher le médicament par nom exact (insensible à la casse)
     const med = state.medicationStock.find(m => 
-        m.name.toLowerCase().includes(medName) || 
-        (m.genericName && m.genericName.toLowerCase().includes(medName))
+        m.name.toLowerCase() === medName.toLowerCase() || 
+        (m.genericName && m.genericName.toLowerCase() === medName.toLowerCase())
     );
     
     if (!med) {
-        alert("Médicament non trouvé dans le stock.");
+        alert("Médicament non trouvé dans le stock. Vérifiez le nom.");
         return;
     }
     
@@ -1032,25 +1165,37 @@ function removeDirectSaleItem(index) {
     updateDirectSaleDisplay();
 }
 
-function confirmDirectSale() {
+// NOUVEAU : Impression d'un bon de caisse pour vente directe
+function printDirectSaleSlip() {
     if (directSaleItems.length === 0) {
         alert("Aucun article à vendre.");
         return;
     }
     
-    // Calculer le total
+    // S'assurer que le patient "Vente directe" existe
+    let directPatient = state.patients.find(p => p.id === 'DIRECT');
+    if (!directPatient) {
+        directPatient = {
+            id: 'DIRECT',
+            fullName: 'Vente directe (client)',
+            age: '',
+            gender: '',
+            phone: '',
+            address: '',
+            hospitalized: false,
+            vip: false,
+            hasCreditPrivilege: false
+        };
+        state.patients.push(directPatient);
+    }
+    
     const totalAmount = directSaleItems.reduce((sum, item) => sum + item.total, 0);
     
-    // Créer un patient temporaire "Vente directe" (ID généré)
-    const tempPatientId = 'DIRECT-' + Date.now();
-    const tempPatientName = 'Vente directe (sans dossier)';
-    
-    // Créer une transaction pour chaque article (ou une seule avec le total)
-    // Pour simplifier, on crée une transaction unique avec le total
+    // Créer la transaction
     const transaction = {
-        id: 'TR' + Date.now(),
-        patientId: tempPatientId,
-        patientName: tempPatientName,
+        id: 'DS' + Date.now(),
+        patientId: 'DIRECT',
+        patientName: directPatient.fullName,
         service: 'Vente directe de médicaments',
         amount: totalAmount,
         status: 'unpaid',
@@ -1059,13 +1204,13 @@ function confirmDirectSale() {
         createdBy: state.currentUser.username,
         type: 'medication',
         isDirectSale: true,
-        items: directSaleItems.map(item => ({ ...item })), // copie
+        items: directSaleItems.map(item => ({ ...item, delivered: false })),
         notificationSent: false
     };
     
     state.transactions.push(transaction);
     
-    // Réserver les quantités (optionnel, on pourrait aussi les déduire immédiatement si on veut, mais généralement on attend le paiement)
+    // Réserver les quantités
     directSaleItems.forEach(item => {
         const med = state.medicationStock.find(m => m.id === item.medId);
         if (med) {
@@ -1076,19 +1221,165 @@ function confirmDirectSale() {
     // Notifier la caisse
     sendNotificationToCashier(transaction);
     
-    // Afficher un message avec le numéro de transaction
-    alert(`Vente enregistrée. Transaction #${transaction.id} créée pour ${totalAmount} Gdes. Le client doit payer à la caisse.`);
+    // Imprimer le bon
+    printDirectSaleSlipDocument(transaction);
     
-    // Réinitialiser
+    // Réinitialiser le panier
     directSaleItems = [];
     updateDirectSaleDisplay();
     
-    // Rafraîchir le stock (affichage)
+    // Rafraîchir le stock
+    updateMedicationStock();
+    
+    // Notification locale forte
+    showNotification(`Bon de caisse imprimé pour ${totalAmount} Gdes. Envoyez le patient à la caisse.`, 'success');
+}
+
+// NOUVEAU : Document à imprimer pour le bon de caisse
+function printDirectSaleSlipDocument(transaction) {
+    const slipContent = `
+        <div class="print-receipt" style="width: 80mm; margin: 0 auto; font-family: Arial, sans-serif;">
+            <div class="text-center">
+                <h3>${document.getElementById('hospital-name-header')?.textContent || 'Hôpital'}</h3>
+                <p>${document.getElementById('hospital-address-header')?.textContent || ''}</p>
+                <h4>BON DE CAISSE</h4>
+                <p>Vente directe</p>
+            </div>
+            <hr>
+            <div>
+                <p><strong>Transaction N°:</strong> ${transaction.id}</p>
+                <p><strong>Date:</strong> ${transaction.date} ${transaction.time}</p>
+                <p><strong>Agent:</strong> ${transaction.createdBy}</p>
+            </div>
+            <hr>
+            <h4>Articles</h4>
+            ${transaction.items.map(item => `
+                <div style="display: flex; justify-content: space-between; margin: 5px 0;">
+                    <span>${item.name} x${item.quantity}</span>
+                    <span>${item.total} Gdes</span>
+                </div>
+            `).join('')}
+            <hr>
+            <div style="display: flex; justify-content: space-between; font-weight: bold;">
+                <span>TOTAL À PAYER:</span>
+                <span>${transaction.amount} Gdes</span>
+            </div>
+            <hr>
+            <div class="text-center">
+                <p>Présentez ce bon à la caisse pour paiement.</p>
+                <p>Après paiement, revenez avec le reçu pour récupérer vos médicaments.</p>
+                <p style="font-size: 12px;">Merci de votre visite!</p>
+            </div>
+        </div>
+    `;
+    
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(`
+        <html>
+        <head>
+            <title>Bon de caisse</title>
+            <style>
+                body { padding: 20px; }
+                .text-center { text-align: center; }
+                hr { border: none; border-top: 1px dashed #000; margin: 10px 0; }
+            </style>
+        </head>
+        <body>${slipContent}</body>
+        </html>
+    `);
+    printWindow.document.close();
+    printWindow.print();
+}
+
+// NOUVEAU : Envoyer une notification forte à la caisse
+function sendNotificationToCashier(transaction) {
+    const content = `Nouvelle vente directe: ${transaction.amount} Gdes. Transaction #${transaction.id}. Patient à la caisse.`;
+    
+    const cashiers = state.users.filter(u => u.active && u.role === 'cashier' && u.username !== state.currentUser.username);
+    cashiers.forEach(user => {
+        const message = {
+            id: 'MSG' + Date.now() + Math.random(),
+            sender: state.currentUser.username,
+            senderRole: state.currentRole,
+            recipient: user.username,
+            recipientRole: user.role,
+            subject: 'Vente directe à payer',
+            content: content,
+            timestamp: new Date().toISOString(),
+            read: false,
+            type: 'direct_sale_notification'
+        };
+        state.messages.push(message);
+    });
+    
+    // Notification locale pour le pharmacien
+    showNotification(`Notification envoyée à la caisse`, 'info');
+}
+
+// MODIFICATION : Version de confirmDirectSale adaptée (assure l'existence du patient DIRECT et notification)
+function confirmDirectSale() {
+    if (directSaleItems.length === 0) {
+        alert("Aucun article à vendre.");
+        return;
+    }
+    
+    // S'assurer que le patient "Vente directe" existe
+    let directPatient = state.patients.find(p => p.id === 'DIRECT');
+    if (!directPatient) {
+        directPatient = {
+            id: 'DIRECT',
+            fullName: 'Vente directe (client)',
+            age: '',
+            gender: '',
+            phone: '',
+            address: '',
+            hospitalized: false,
+            vip: false,
+            hasCreditPrivilege: false
+        };
+        state.patients.push(directPatient);
+    }
+    
+    const totalAmount = directSaleItems.reduce((sum, item) => sum + item.total, 0);
+    
+    const transaction = {
+        id: 'TR' + Date.now(),
+        patientId: 'DIRECT',
+        patientName: directPatient.fullName,
+        service: 'Vente directe de médicaments',
+        amount: totalAmount,
+        status: 'unpaid',
+        date: new Date().toISOString().split('T')[0],
+        time: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
+        createdBy: state.currentUser.username,
+        type: 'medication',
+        isDirectSale: true,
+        items: directSaleItems.map(item => ({ ...item, delivered: false })),
+        notificationSent: false
+    };
+    
+    state.transactions.push(transaction);
+    
+    directSaleItems.forEach(item => {
+        const med = state.medicationStock.find(m => m.id === item.medId);
+        if (med) {
+            med.reserved = (med.reserved || 0) + item.quantity;
+        }
+    });
+    
+    // Notifier la caisse
+    sendNotificationToCashier(transaction);
+    
+    alert(`Vente enregistrée. Transaction #${transaction.id} créée pour ${totalAmount} Gdes. Le client doit payer à la caisse.`);
+    
+    directSaleItems = [];
+    updateDirectSaleDisplay();
     updateMedicationStock();
 }
 
 // Rendre accessible globalement
 window.deliverMedication = deliverMedication;
+window.deliverDirectSale = deliverDirectSale; // NOUVEAU
 window.restockMedication = restockMedication;
 window.editMedication = editMedication;
 window.saveMedicationEdit = saveMedicationEdit;

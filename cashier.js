@@ -60,8 +60,28 @@ function setupCashier() {
         }
     }
     
+    // Initialiser les soldes par mode de paiement si non définis
+    if (!state.paymentMethodBalances) {
+        state.paymentMethodBalances = { cash: 0, moncash: 0, natcash: 0, card: 0, external: 0 };
+    }
+    
     // Initialiser le label du montant donné
     updateAmountGivenLabel();
+    
+    // S'assurer que le patient "Vente directe" existe (créé par la pharmacie, mais on vérifie)
+    if (!state.patients.find(p => p.id === 'DIRECT')) {
+        state.patients.push({
+            id: 'DIRECT',
+            fullName: 'Vente directe (client)',
+            age: '',
+            gender: '',
+            phone: '',
+            address: '',
+            hospitalized: false,
+            vip: false,
+            hasCreditPrivilege: false
+        });
+    }
 }
 
 function updateAmountGivenLabel() {
@@ -80,14 +100,21 @@ function updateAmountGivenLabel() {
 }
 
 function searchCashierPatient() {
-    const search = document.getElementById('cashier-patient-search').value.toLowerCase();
-    const patient = state.patients.find(p => 
+    const search = document.getElementById('cashier-patient-search').value.trim().toLowerCase();
+    
+    // Recherche dans les patients
+    let patient = state.patients.find(p => 
         p.id.toLowerCase() === search || 
         p.fullName.toLowerCase().includes(search)
     );
     
+    // Si c'est "DIRECT", on le prend (déjà dans la liste)
+    if (!patient && search === 'direct') {
+        patient = state.patients.find(p => p.id === 'DIRECT');
+    }
+    
     if (!patient) {
-        alert("Patient non trouvé!");
+        alert("Patient non trouvé! Vous pouvez chercher 'DIRECT' pour les ventes sans dossier.");
         return;
     }
     
@@ -101,11 +128,22 @@ function searchCashierPatient() {
 
 function displayServicesToPay(patientId) {
     const patient = state.patients.find(p => p.id === patientId);
-    const unpaidTransactions = state.transactions.filter(t => 
-        t.patientId === patientId && 
-        t.status === 'unpaid' &&
-        !t.isCredit
-    );
+    // Récupérer les transactions non payées (unpaid) et les transactions d'hospitalisation (hospitalized)
+    // Pour le patient DIRECT, on prend toutes les ventes directes non payées
+    let unpaidTransactions = [];
+    if (patientId === 'DIRECT') {
+        unpaidTransactions = state.transactions.filter(t => 
+            t.patientId === 'DIRECT' && 
+            t.status === 'unpaid' &&
+            t.isDirectSale === true
+        );
+    } else {
+        unpaidTransactions = state.transactions.filter(t => 
+            t.patientId === patientId && 
+            (t.status === 'unpaid' || t.status === 'hospitalized') &&
+            !t.isCredit
+        );
+    }
     
     const container = document.getElementById('services-to-pay-list');
     let html = '';
@@ -120,9 +158,14 @@ function displayServicesToPay(patientId) {
             const amountUSD = transaction.amount / state.exchangeRate;
             total += transaction.amount;
             
+            let serviceName = transaction.service;
+            if (transaction.isDirectSale) {
+                serviceName += ` #${transaction.id}`;
+            }
+            
             html += `
                 <tr>
-                    <td>${transaction.service}</td>
+                    <td>${serviceName} ${transaction.status === 'hospitalized' ? '<span class="hospitalized-tag">(Hospitalisation)</span>' : ''}</td>
                     <td>${transaction.amount} Gdes</td>
                     <td>${amountUSD.toFixed(2)} $</td>
                     <td><input type="checkbox" class="service-checkbox" data-id="${transaction.id}" data-amount="${transaction.amount}" checked></td>
@@ -140,7 +183,7 @@ function displayServicesToPay(patientId) {
     document.getElementById('total-to-pay-usd').textContent = totalUSD.toFixed(2);
     
     // Si le patient a le privilège crédit, afficher l'option de paiement par crédit
-    if (patient && patient.hasCreditPrivilege) {
+    if (patient && patient.hasCreditPrivilege && patientId !== 'DIRECT') {
         const creditAccount = state.creditAccounts[patientId];
         if (creditAccount && creditAccount.available > 0) {
             const creditOptionHtml = `
@@ -155,6 +198,26 @@ function displayServicesToPay(patientId) {
                 </div>
             `;
             container.insertAdjacentHTML('afterend', creditOptionHtml);
+        }
+    }
+    
+    // Si le patient est hospitalisé, afficher un résumé de la dette
+    if (patient && patient.hospitalized && patientId !== 'DIRECT') {
+        const hospitalizedTotal = unpaidTransactions
+            .filter(t => t.status === 'hospitalized')
+            .reduce((sum, t) => sum + t.amount, 0);
+        if (hospitalizedTotal > 0) {
+            const hospitalInfoHtml = `
+                <div class="alert alert-warning mt-2">
+                    <p><strong>Patient hospitalisé</strong></p>
+                    <p>Total des frais d'hospitalisation : ${hospitalizedTotal} Gdes</p>
+                    <p>Vous pouvez encaisser un acompte ou solder la totalité.</p>
+                    <button class="btn btn-secondary mt-1" onclick="collectHospitalDeposit('${patientId}')">
+                        <i class="fas fa-hand-holding-usd"></i> Encaisser acompte
+                    </button>
+                </div>
+            `;
+            container.insertAdjacentHTML('afterend', hospitalInfoHtml);
         }
     }
     
@@ -217,7 +280,6 @@ function markAsPaid() {
     
     // Si le patient a le privilège VIP, marquer directement comme payé
     if (patient && patient.vip) {
-        // Traiter chaque service sélectionné
         selectedServices.forEach(checkbox => {
             const transactionId = checkbox.dataset.id;
             const transaction = state.transactions.find(t => t.id === transactionId);
@@ -236,6 +298,7 @@ function markAsPaid() {
         
         alert("Services marqués comme payés (VIP)!");
         resetCashierInterface();
+        sendPaymentNotifications(patientId, selectedServices);
         return;
     }
     
@@ -280,12 +343,20 @@ function markAsPaid() {
             // Mettre à jour le solde du caissier
             updateCashierBalance(transaction.amount, patientId, transactionId);
             
-            // Envoyer notification de paiement
-            sendPaymentNotification(transaction);
+            // Mettre à jour le solde du mode de paiement
+            if (state.paymentMethodBalances[paymentMethod] !== undefined) {
+                state.paymentMethodBalances[paymentMethod] += transaction.amount;
+            }
+            
+            // Mettre à jour la grande caisse (somme de tous les modes)
+            state.mainCash += transaction.amount;
         }
     });
     
     alert("Paiement effectué avec succès!");
+    
+    // Envoyer des notifications
+    sendPaymentNotifications(patientId, selectedServices);
     
     // Réinitialiser l'affichage pour retourner à la page initiale
     resetCashierInterface();
@@ -359,24 +430,73 @@ function payWithCredit(patientId) {
                 note: `Paiement de transaction ${transactionId}: ${transaction.service}`,
                 newBalance: creditAccount.available
             });
-            
-            // Envoyer notification de paiement
-            sendPaymentNotification(transaction);
         }
     });
     
     alert(`Paiement par crédit effectué avec succès!\nMontant utilisé: ${totalAmount} Gdes\nNouveau solde disponible: ${creditAccount.available} Gdes`);
     
-    // Réinitialiser l'affichage
+    sendPaymentNotifications(patientId, selectedServices);
+    
     resetCashierInterface();
     
-    // Mettre à jour les statistiques
     if (typeof updateAdminStats === 'function') updateAdminStats();
     if (typeof updateAdminExtendedDisplay === 'function') updateAdminExtendedDisplay();
 }
 
+// Nouvelle fonction : encaisser un acompte pour hospitalisation
+function collectHospitalDeposit(patientId) {
+    const patient = state.patients.find(p => p.id === patientId);
+    if (!patient || !patient.hospitalized) {
+        alert("Ce patient n'est pas hospitalisé.");
+        return;
+    }
+    
+    const depositAmount = parseFloat(prompt("Montant de l'acompte (Gdes):", "0"));
+    if (isNaN(depositAmount) || depositAmount <= 0) {
+        alert("Montant invalide.");
+        return;
+    }
+    
+    const paymentMethodElement = document.querySelector('.payment-method.active');
+    if (!paymentMethodElement) {
+        alert("Veuillez sélectionner une méthode de paiement.");
+        return;
+    }
+    const paymentMethod = paymentMethodElement.dataset.method;
+    
+    // Créer une transaction spéciale pour l'acompte
+    const depositTransaction = {
+        id: 'DEP' + Date.now(),
+        patientId: patientId,
+        patientName: patient.fullName,
+        service: 'Acompte hospitalisation',
+        amount: depositAmount,
+        status: 'paid',
+        date: new Date().toISOString().split('T')[0],
+        time: new Date().toLocaleTimeString('fr-FR'),
+        createdBy: state.currentUser.username,
+        type: 'deposit',
+        paymentMethod: paymentMethod,
+        paymentAgent: state.currentUser.username,
+        isDeposit: true
+    };
+    
+    state.transactions.push(depositTransaction);
+    
+    // Mettre à jour les soldes
+    updateCashierBalance(depositAmount, patientId, depositTransaction.id);
+    if (state.paymentMethodBalances[paymentMethod] !== undefined) {
+        state.paymentMethodBalances[paymentMethod] += depositAmount;
+    }
+    state.mainCash += depositAmount;
+    
+    alert(`Acompte de ${depositAmount} Gdes enregistré.`);
+    
+    // Recharger l'affichage
+    displayServicesToPay(patientId);
+}
+
 function resetCashierInterface() {
-    // Réinitialiser tous les champs
     document.getElementById('cashier-patient-search').value = '';
     document.getElementById('cashier-patient-search').focus();
     document.getElementById('cashier-patient-details').classList.add('hidden');
@@ -387,7 +507,6 @@ function resetCashierInterface() {
     document.getElementById('change-result').textContent = 'Monnaie: 0 Gdes';
     document.getElementById('change-result').style.color = '#28a745';
     
-    // Réinitialiser les sélections
     const currencyBtns = document.querySelectorAll('.payment-method-currency');
     currencyBtns.forEach(b => b.classList.remove('active'));
     if (currencyBtns.length > 0) currencyBtns[0].classList.add('active');
@@ -396,7 +515,6 @@ function resetCashierInterface() {
     paymentBtns.forEach(b => b.classList.remove('active'));
     if (paymentBtns.length > 0) paymentBtns[0].classList.add('active');
     
-    // Mettre à jour le label
     updateAmountGivenLabel();
 }
 
@@ -410,10 +528,7 @@ function updateCashierBalance(amount, patientId, transactionId) {
         };
     }
     
-    // Ajouter au solde du caissier
     state.cashierBalances[username].balance += amount;
-    
-    // Enregistrer la transaction
     state.cashierBalances[username].transactions.push({
         date: new Date().toISOString().split('T')[0],
         time: new Date().toLocaleTimeString('fr-FR'),
@@ -422,10 +537,71 @@ function updateCashierBalance(amount, patientId, transactionId) {
         patientId: patientId,
         transactionId: transactionId
     });
-    
-    // Mettre à jour la caisse principale
-    state.mainCash += amount;
 }
+
+// MODIFICATION : Envoyer des notifications de paiement avec son fort
+function sendPaymentNotifications(patientId, selectedServices) {
+    const patient = state.patients.find(p => p.id === patientId);
+    if (!patient) return;
+    
+    const serviceNames = Array.from(selectedServices).map(cb => {
+        const trans = state.transactions.find(t => t.id === cb.dataset.id);
+        return trans ? trans.service : '';
+    }).filter(s => s).join(', ');
+    
+    const content = `Paiement effectué pour ${patient.fullName} (${patientId}) : ${serviceNames}`;
+    
+    // Notifier tous les utilisateurs actifs sauf le caissier lui-même
+    const recipients = state.users.filter(u => u.active && u.username !== state.currentUser.username);
+    recipients.forEach(user => {
+        const message = {
+            id: 'MSG' + Date.now() + Math.random(),
+            sender: state.currentUser.username,
+            senderRole: state.currentRole,
+            recipient: user.username,
+            recipientRole: user.role,
+            subject: 'Paiement effectué',
+            content: content,
+            timestamp: new Date().toISOString(),
+            read: false,
+            type: 'payment_notification'
+        };
+        state.messages.push(message);
+    });
+    
+    // Afficher un toast local avec son fort
+    showNotification(`Paiement enregistré pour ${patient.fullName}`, 'success');
+    
+    updateMessageBadge();
+}
+
+// MODIFICATION : Notification plus forte (son plus fort, durée 4 secondes)
+function showNotification(message, type = 'info') {
+    const toast = document.createElement('div');
+    toast.className = `toast-notification ${type}`;
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    
+    try {
+        // Son plus fort
+        const audio = new Audio('data:audio/wav;base64,UklGRlwAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YVQAAABJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJ');
+        audio.volume = 1.0; // Maximum
+        audio.play().catch(e => console.log('Son bloqué par le navigateur'));
+        
+        // Second son pour renforcer
+        setTimeout(() => {
+            const audio2 = new Audio('data:audio/wav;base64,UklGRlwAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YVQAAABJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJ');
+            audio2.volume = 1.0;
+            audio2.play().catch(e => {});
+        }, 200);
+    } catch (e) {}
+    
+    setTimeout(() => {
+        toast.remove();
+    }, 4000);
+}
+
+// ==================== FONCTIONS D'IMPRESSION ====================
 
 function printInvoice() {
     const patientId = document.getElementById('cashier-patient-id').textContent;
@@ -515,7 +691,6 @@ function printReceipt() {
     const paymentMethodElement = document.querySelector('.payment-method.active');
     const paymentMethod = paymentMethodElement ? paymentMethodElement.dataset.method : 'Non spécifié';
     
-    // Calculer le change selon la devise
     let amountGivenInHTG = amountGiven;
     let change = 0;
     
@@ -623,7 +798,6 @@ function printGeneralSheet() {
         return;
     }
     
-    // Récupérer toutes les transactions du patient pour aujourd'hui
     const today = new Date().toISOString().split('T')[0];
     const patientTransactions = state.transactions.filter(t => 
         t.patientId === patientId && 
@@ -635,11 +809,9 @@ function printGeneralSheet() {
         return;
     }
     
-    // Calculer les totaux
     let totalAmount = 0;
     let totalPaid = 0;
     let totalUnpaid = 0;
-    
     let servicesHtml = '';
     
     patientTransactions.forEach(transaction => {
@@ -771,7 +943,6 @@ function printAllTransactions() {
         return;
     }
     
-    // Récupérer toutes les transactions du patient (toutes dates)
     const patientTransactions = state.transactions.filter(t => t.patientId === patientId);
     
     if (patientTransactions.length === 0) {
@@ -779,14 +950,11 @@ function printAllTransactions() {
         return;
     }
     
-    // Trier par date (plus récent en premier)
     patientTransactions.sort((a, b) => new Date(b.date) - new Date(a.date));
     
-    // Calculer les totaux
     let totalAmount = 0;
     let totalPaid = 0;
     let totalUnpaid = 0;
-    
     let servicesHtml = '';
     
     patientTransactions.forEach(transaction => {
@@ -912,3 +1080,7 @@ function printAllTransactions() {
     printWindow.document.close();
     printWindow.print();
 }
+
+// Rendre les fonctions globales accessibles
+window.payWithCredit = payWithCredit;
+window.collectHospitalDeposit = collectHospitalDeposit;
