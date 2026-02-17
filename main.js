@@ -24,7 +24,6 @@ function initApp() {
     if (!state.mainCash) state.mainCash = 1000000;
     if (!state.pettyCash) state.pettyCash = 0;
     if (!state.reports) state.reports = [];
-    if (!state.paymentMethodBalances) state.paymentMethodBalances = { cash:0, moncash:0, natcash:0, card:0, external:0 };
     
     // Initialiser les transactions par utilisateur
     initializeUserTransactions();
@@ -56,22 +55,7 @@ function initApp() {
         setupSecretary();
     }
     
-    // Initialiser le laboratoire si disponible
-    if (typeof setupLaboratory === 'function') {
-        setupLaboratory();
-    }
-    
-    // Initialiser l'infirmier si disponible
-    if (typeof setupNurse === 'function') {
-        setupNurse();
-    }
-    
-    // Initialiser le médecin si disponible
-    if (typeof setupDoctor === 'function') {
-        setupDoctor();
-    }
-    
-    console.log("Tous les modules ont été initialisés!");
+    console.log("Nouvelles fonctionnalités d'administration initialisées!");
 }
 
 function initializeUserTransactions() {

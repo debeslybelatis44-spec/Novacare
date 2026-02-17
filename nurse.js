@@ -63,9 +63,6 @@ function setupNurse() {
         updateVitalsHistory(patientId);
         e.target.reset();
     });
-    
-    // Démarrer la surveillance des notifications de paiement
-    startPaymentNotificationWatcher();
 }
 
 function updateVitalsInputs() {
@@ -122,57 +119,6 @@ function updateVitalsHistory(patientId) {
     
     html += '</tbody></table>';
     container.innerHTML = html;
-}
-
-// Fonction pour afficher une notification toast (copiée depuis doctor.js)
-function showNotification(message, type = 'info') {
-    const toast = document.createElement('div');
-    toast.className = `toast-notification ${type}`;
-    toast.textContent = message;
-    document.body.appendChild(toast);
-    
-    // Jouer un son (optionnel)
-    try {
-        const audio = new Audio('data:audio/wav;base64,UklGRlwAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YVQAAABJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJ');
-        audio.volume = 0.3;
-        audio.play().catch(e => console.log('Son bloqué par le navigateur'));
-    } catch (e) {}
-    
-    setTimeout(() => {
-        toast.remove();
-    }, 4000);
-}
-
-// Surveillance des notifications de paiement
-let lastCheckedMessageId = null;
-
-function startPaymentNotificationWatcher() {
-    // Vérifier toutes les 10 secondes
-    setInterval(checkNewPaymentNotifications, 10000);
-    // Première vérification immédiate
-    checkNewPaymentNotifications();
-}
-
-function checkNewPaymentNotifications() {
-    if (!state.currentUser || state.currentUser.role !== 'nurse') return;
-    
-    const now = Date.now();
-    // Récupérer les messages non lus de type payment_notification destinés à l'infirmier
-    const newMessages = state.messages.filter(m => 
-        m.recipient === state.currentUser.username &&
-        m.type === 'payment_notification' &&
-        !m.read
-    );
-    
-    newMessages.forEach(msg => {
-        // Afficher une notification toast
-        showNotification(`Nouveau paiement: ${msg.content}`, 'success');
-        // Marquer comme lu (pour ne plus afficher)
-        msg.read = true;
-    });
-    
-    // Mettre à jour le badge de messages
-    updateMessageBadge();
 }
 
 // Initialisation du module infirmier

@@ -1,43 +1,6 @@
 // ==================== MÉDECIN ====================
 let currentDoctorPatient = null;
 
-// Son de notification long et fort (4 secondes)
-function playNotificationSound(duration = 4000, volume = 0.9) {
-    try {
-        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        const oscillator = audioCtx.createOscillator();
-        const gainNode = audioCtx.createGain();
-        oscillator.connect(gainNode);
-        gainNode.connect(audioCtx.destination);
-        oscillator.frequency.value = 880; // La note A
-        gainNode.gain.value = volume;
-        oscillator.start();
-        oscillator.stop(audioCtx.currentTime + duration / 1000);
-    } catch (e) {
-        console.warn("Web Audio API not supported, fallback to simple beep");
-        try {
-            const audio = new Audio('data:audio/wav;base64,UklGRlwAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YVQAAABJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJ');
-            audio.volume = volume;
-            audio.play().catch(e => console.log('Son bloqué par le navigateur'));
-        } catch (e) {}
-    }
-}
-
-function showNotification(message, type = 'info') {
-    // Créer un toast
-    const toast = document.createElement('div');
-    toast.className = `toast-notification ${type}`;
-    toast.textContent = message;
-    document.body.appendChild(toast);
-    
-    // Jouer le son long et fort
-    playNotificationSound(4000, 0.9);
-    
-    setTimeout(() => {
-        toast.remove();
-    }, 4000);
-}
-
 function setupDoctor() {
     document.getElementById('search-doctor-patient').addEventListener('click', () => {
         const search = document.getElementById('doctor-patient-search').value.toLowerCase();
@@ -66,7 +29,6 @@ function setupDoctor() {
         document.getElementById('doctor-patient-age').textContent = age;
         document.getElementById('doctor-patient-phone').textContent = patient.phone;
         document.getElementById('doctor-patient-type').textContent = patient.type.charAt(0).toUpperCase() + patient.type.slice(1);
-        document.getElementById('doctor-hospitalized-status').textContent = patient.hospitalized ? 'Oui' : 'Non';
         
         const unpaidTransactions = state.transactions.filter(t => 
             t.patientId === patient.id && 
@@ -94,7 +56,6 @@ function setupDoctor() {
         
         document.getElementById('doctor-patient-details').classList.remove('hidden');
         
-        // Le médecin ne voit pas les détails de paiement, seulement le type de consultation
         const consultationTransaction = state.transactions.find(t => 
             t.patientId === patient.id && 
             t.type === 'consultation'
@@ -102,13 +63,11 @@ function setupDoctor() {
         
         const consultationContainer = document.getElementById('current-consultation-info');
         if (consultationTransaction) {
-            // Le médecin ne voit pas le prix
             const consultationType = consultationTransaction.service.replace('Consultation: ', '');
             consultationContainer.innerHTML = `
                 <p><strong>Type de consultation:</strong> ${consultationType}</p>
                 <p><strong>Statut paiement:</strong> <span class="${consultationTransaction.status === 'paid' ? 'status-paid' : 'status-unpaid'}">${consultationTransaction.status === 'paid' ? 'Payé' : 'Non payé'}</span></p>
             `;
-            // Masquer la section de modification de consultation pour le médecin
             document.getElementById('consultation-modification-section').classList.add('hidden');
         } else {
             consultationContainer.innerHTML = '<p>Aucune consultation enregistrée</p>';
@@ -118,19 +77,10 @@ function setupDoctor() {
         updateCurrentVitalsDisplay(patient.id);
         updateLabAnalysesSelect();
         updateDoctorLabResults(patient.id);
-        
-        // Pré-remplir la case d'hospitalisation si déjà hospitalisé
-        document.getElementById('hospitalize-patient').checked = patient.hospitalized || false;
     });
     
     updateDoctorConsultationTypes();
     
-    // Supprimer l'événement de modification de consultation pour le médecin
-    document.getElementById('update-consultation-type')?.removeEventListener('click', function() {});
-    document.getElementById('update-consultation-type')?.setAttribute('disabled', 'true');
-    document.getElementById('update-consultation-type')?.classList.add('hidden');
-    
-    // Le médecin peut toujours modifier les signes vitaux
     document.getElementById('edit-vitals-btn').addEventListener('click', () => {
         const patientId = document.getElementById('doctor-patient-id').textContent;
         const patientVitals = state.vitals.filter(v => v.patientId === patientId);
@@ -194,7 +144,6 @@ function setupDoctor() {
         document.getElementById('doctor-vitals-modification').classList.add('hidden');
     });
     
-    // Le médecin peut modifier les analyses
     document.getElementById('modify-analyses-btn').addEventListener('click', () => {
         const panel = document.getElementById('lab-modification-panel');
         panel.classList.toggle('hidden');
@@ -208,7 +157,6 @@ function setupDoctor() {
                 
                 if (analysis) {
                     document.getElementById('modified-analysis-name').value = analysis.name;
-                    // Le médecin ne voit pas le prix pour la modification
                     document.getElementById('modified-analysis-price').value = analysis.price;
                     document.getElementById('modified-analysis-price').setAttribute('disabled', 'true');
                     state.currentModifiedAnalysis = { id: analysisId, name: analysis.name, price: analysis.price };
@@ -231,7 +179,6 @@ function setupDoctor() {
             const analysisId = parseInt(cb.value);
             if (analysisId === state.currentModifiedAnalysis.id) {
                 const label = cb.parentElement;
-                // Le médecin ne voit pas le prix dans l'affichage
                 label.innerHTML = `<input type="checkbox" value="${analysisId}" data-price="${modifiedPrice}" checked>
                                    ${modifiedName} <span class="text-warning"><i class="fas fa-edit"></i> Modifié</span>`;
             }
@@ -260,13 +207,12 @@ function setupDoctor() {
         
         const matchingMeds = state.medicationStock.filter(med => 
             med.name.toLowerCase().includes(searchTerm) ||
-            (med.genericName && med.genericName.toLowerCase().includes(searchTerm))
+            med.genericName.toLowerCase().includes(searchTerm)
         ).slice(0, 5);
         
         if (matchingMeds.length > 0) {
             let html = '';
             matchingMeds.forEach(med => {
-                // Le médecin ne voit pas le prix des médicaments
                 html += `
                     <div class="suggestion-item" style="padding:5px 10px; cursor:pointer;" 
                          onclick="addMedicationToPrescription('${med.id}')">
@@ -289,97 +235,27 @@ function setupDoctor() {
             return;
         }
         
-        // Récupération du type de consultation
-        const consultationTypeSelect = document.getElementById('doctor-consultation-type');
-        const selectedOption = consultationTypeSelect.options[consultationTypeSelect.selectedIndex];
-        if (!selectedOption.value) {
-            alert("Veuillez sélectionner un type de consultation.");
-            return;
-        }
-        const consultationPrice = parseFloat(selectedOption.dataset.price);
-        const consultationName = selectedOption.text;
-        
         const diagnosis = document.getElementById('consultation-diagnosis').value;
         const notes = document.getElementById('consultation-notes').value;
         const followupDate = document.getElementById('followup-date').value;
         const followupTime = document.getElementById('followup-time').value;
-        const hospitalize = document.getElementById('hospitalize-patient').checked;
         
-        // Gestion de l'hospitalisation
-        if (hospitalize && !currentDoctorPatient.hospitalized) {
-            currentDoctorPatient.hospitalized = true;
-            currentDoctorPatient.hospitalizationStartDate = new Date().toISOString().split('T')[0];
-            currentDoctorPatient.currentHospitalizationId = 'HOSP-' + currentDoctorPatient.id + '-' + Date.now();
-            currentDoctorPatient.hospitalizationServices = [];
-            alert("Patient marqué comme hospitalisé. Les services seront comptabilisés et facturés en fin d'hospitalisation.");
-        }
-        
-        // Préparation du statut de paiement par défaut
-        let paymentStatus = 'unpaid';
-        let paymentMethod = null;
-        let paymentNote = '';
-        
-        if (currentDoctorPatient.vip && !currentDoctorPatient.hospitalized) {
-            paymentStatus = 'paid';
-            paymentMethod = 'vip';
-        } else if (currentDoctorPatient.sponsored && !currentDoctorPatient.hospitalized) {
-            paymentStatus = 'unpaid'; // la réduction sera appliquée sur le montant
-        }
-        
-        // Collecte de toutes les transactions créées pour notification à la caisse
-        const createdTransactions = [];
-        
-        // --- Transaction de la consultation ---
-        let consultationAmount = consultationPrice;
-        if (currentDoctorPatient.sponsored && !currentDoctorPatient.hospitalized) {
-            consultationAmount = consultationPrice * (1 - currentDoctorPatient.discountPercentage / 100);
-        }
-        const consultationTransaction = {
-            id: 'CONS' + Date.now() + '-TR',
-            patientId: currentDoctorPatient.id,
-            patientName: currentDoctorPatient.fullName,
-            service: `Consultation: ${consultationName}`,
-            amount: consultationAmount,
-            status: paymentStatus,
-            date: new Date().toISOString().split('T')[0],
-            time: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
-            createdBy: state.currentUser.username,
-            type: 'consultation',
-            consultationTypeId: consultationTypeSelect.value,
-            paymentMethod: paymentMethod,
-            paymentNote: paymentNote
-        };
-        
-        // Ajustement pour hospitalisation
-        if (currentDoctorPatient.hospitalized) {
-            consultationTransaction.status = 'unpaid';
-            consultationTransaction.hospitalizationId = currentDoctorPatient.currentHospitalizationId;
-            consultationTransaction.paymentNote = 'Service hospitalier';
-        }
-        
-        state.consultations.push({
+        const consultation = {
             id: 'CONS' + Date.now(),
             patientId: currentDoctorPatient.id,
             patientName: currentDoctorPatient.fullName,
             doctor: state.currentUser.username,
-            date: consultationTransaction.date,
-            time: consultationTransaction.time,
+            date: new Date().toISOString().split('T')[0],
+            time: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
             diagnosis: diagnosis,
             notes: notes,
             followupDate: followupDate,
             followupTime: followupTime,
             modified: false
-        });
+        };
         
-        state.transactions.push(consultationTransaction);
-        createdTransactions.push(consultationTransaction);
+        state.consultations.push(consultation);
         
-        if (currentDoctorPatient.hospitalized) {
-            if (!currentDoctorPatient.hospitalizationServices) currentDoctorPatient.hospitalizationServices = [];
-            currentDoctorPatient.hospitalizationServices.push(consultationTransaction);
-        }
-        
-        // --- Traitement des analyses ---
         const analysisCheckboxes = document.querySelectorAll('#lab-analyses-selection input:checked');
         analysisCheckboxes.forEach(cb => {
             const analysisId = parseInt(cb.value);
@@ -390,18 +266,13 @@ function setupDoctor() {
             }
             
             if (analysis) {
-                let amount = analysis.modifiedPrice || analysis.price;
-                if (currentDoctorPatient.sponsored && !currentDoctorPatient.hospitalized) {
-                    amount = amount * (1 - currentDoctorPatient.discountPercentage / 100);
-                }
-                
                 const analysisTransaction = {
-                    id: 'LAB' + Date.now() + Math.random(),
+                    id: 'LAB' + Date.now(),
                     patientId: currentDoctorPatient.id,
                     patientName: currentDoctorPatient.fullName,
                     service: `Analyse: ${analysis.modifiedName || analysis.name}`,
-                    amount: amount,
-                    status: paymentStatus,
+                    amount: analysis.modifiedPrice || analysis.price,
+                    status: currentDoctorPatient.vip ? 'paid' : 'unpaid',
                     date: new Date().toISOString().split('T')[0],
                     time: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
                     createdBy: state.currentUser.username,
@@ -412,34 +283,25 @@ function setupDoctor() {
                     notificationSent: false,
                     originalTypeId: analysisId,
                     modifiedName: analysis.modifiedName || null,
-                    modifiedPrice: analysis.modifiedPrice || null,
-                    paymentMethod: paymentMethod,
-                    paymentNote: paymentNote
+                    modifiedPrice: analysis.modifiedPrice || null
                 };
                 
-                if (currentDoctorPatient.hospitalized) {
-                    analysisTransaction.status = 'unpaid';
-                    analysisTransaction.hospitalizationId = currentDoctorPatient.currentHospitalizationId;
-                    analysisTransaction.paymentNote = 'Service hospitalier';
+                if (currentDoctorPatient.vip) {
+                    analysisTransaction.paymentMethod = 'vip';
+                    analysisTransaction.paymentDate = new Date().toISOString().split('T')[0];
+                    analysisTransaction.paymentTime = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+                    analysisTransaction.paymentAgent = 'system';
+                } else if (currentDoctorPatient.sponsored) {
+                    analysisTransaction.amount = analysisTransaction.amount * (1 - currentDoctorPatient.discountPercentage / 100);
                 }
                 
                 state.transactions.push(analysisTransaction);
-                createdTransactions.push(analysisTransaction);
-                
-                if (currentDoctorPatient.hospitalized) {
-                    if (!currentDoctorPatient.hospitalizationServices) currentDoctorPatient.hospitalizationServices = [];
-                    currentDoctorPatient.hospitalizationServices.push(analysisTransaction);
+                if (!currentDoctorPatient.vip) {
+                    sendNotificationToCashier(analysisTransaction);
                 }
-                
-                // Notifications existantes
-                if (!currentDoctorPatient.hospitalized && !currentDoctorPatient.vip) {
-                    sendNotificationToCashier([analysisTransaction]); // Notifie la caisse individuellement (optionnel)
-                }
-                sendNotificationToLab(analysisTransaction);
             }
         });
         
-        // --- Traitement des médicaments prescrits ---
         const medicationRows = document.querySelectorAll('#prescription-medications-list tr');
         medicationRows.forEach(row => {
             const medName = row.cells[0].textContent;
@@ -448,20 +310,14 @@ function setupDoctor() {
             const medId = row.cells[2].querySelector('input').dataset.medId;
             
             const med = state.medicationStock.find(m => m.id === medId);
-            if (!med) return;
-            
-            let amount = med.price * quantity;
-            if (currentDoctorPatient.sponsored && !currentDoctorPatient.hospitalized) {
-                amount = amount * (1 - currentDoctorPatient.discountPercentage / 100);
-            }
             
             const medTransaction = {
-                id: 'MED' + Date.now() + Math.random(),
+                id: 'MED' + Date.now(),
                 patientId: currentDoctorPatient.id,
                 patientName: currentDoctorPatient.fullName,
                 service: `Médicament: ${medName} (${quantity} ${med.unit})`,
-                amount: amount,
-                status: paymentStatus,
+                amount: med.price * quantity,
+                status: currentDoctorPatient.vip ? 'paid' : 'unpaid',
                 date: new Date().toISOString().split('T')[0],
                 time: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
                 createdBy: state.currentUser.username,
@@ -470,38 +326,25 @@ function setupDoctor() {
                 dosage: dosage,
                 quantity: quantity,
                 deliveryStatus: 'pending',
-                notificationSent: false,
-                paymentMethod: paymentMethod,
-                paymentNote: paymentNote
+                notificationSent: false
             };
             
-            if (currentDoctorPatient.hospitalized) {
-                medTransaction.status = 'unpaid';
-                medTransaction.hospitalizationId = currentDoctorPatient.currentHospitalizationId;
-                medTransaction.paymentNote = 'Service hospitalier';
+            if (currentDoctorPatient.vip) {
+                medTransaction.paymentMethod = 'vip';
+                medTransaction.paymentDate = new Date().toISOString().split('T')[0];
+                medTransaction.paymentTime = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+                medTransaction.paymentAgent = 'system';
+            } else if (currentDoctorPatient.sponsored) {
+                medTransaction.amount = medTransaction.amount * (1 - currentDoctorPatient.discountPercentage / 100);
             }
             
             state.transactions.push(medTransaction);
-            createdTransactions.push(medTransaction);
-            
-            if (currentDoctorPatient.hospitalized) {
-                if (!currentDoctorPatient.hospitalizationServices) currentDoctorPatient.hospitalizationServices = [];
-                currentDoctorPatient.hospitalizationServices.push(medTransaction);
+            if (!currentDoctorPatient.vip) {
+                sendNotificationToCashier(medTransaction);
             }
-            
-            // Notifications existantes
-            if (!currentDoctorPatient.hospitalized && !currentDoctorPatient.vip) {
-                sendNotificationToCashier([medTransaction]); // optionnel
-            }
-            sendNotificationToPharmacy(medTransaction);
             
             med.reserved = (med.reserved || 0) + quantity;
         });
-        
-        // Notification globale à la caisse pour l'ensemble de la consultation
-        if (createdTransactions.length > 0 && !currentDoctorPatient.vip && !currentDoctorPatient.hospitalized) {
-            sendNotificationToCashier(createdTransactions);
-        }
         
         alert("Consultation enregistrée avec succès!");
         e.target.reset();
@@ -510,11 +353,7 @@ function setupDoctor() {
         document.getElementById('stock-warnings').innerHTML = '';
         state.currentModifiedAnalysis = null;
         document.getElementById('lab-modification-panel').classList.add('hidden');
-        document.getElementById('hospitalize-patient').checked = false;
     });
-    
-    // Le médecin ne peut pas modifier une consultation existante
-    document.getElementById('modify-consultation-btn')?.remove();
     
     document.getElementById('search-doctor-appointment-medical').addEventListener('click', searchDoctorAppointment);
 }
@@ -526,7 +365,6 @@ function updateDoctorConsultationTypes() {
     select.innerHTML = '<option value="">Sélectionner un type</option>';
     state.consultationTypes.forEach(type => {
         if (type.active) {
-            // Le médecin ne voit pas les prix
             select.innerHTML += `<option value="${type.id}" data-price="${type.price}">${type.name}</option>`;
         }
     });
@@ -580,7 +418,6 @@ function updateLabAnalysesSelect() {
         html += `<div class="analysis-group">`;
         html += `<h5>${category}</h5>`;
         analyses.forEach(analysis => {
-            // Le médecin ne voit pas les prix
             html += `
                 <label style="display: block; margin-bottom: 5px;">
                     <input type="checkbox" value="${analysis.id}" data-price="${analysis.price}">
@@ -601,7 +438,6 @@ function addMedicationToPrescription(medId) {
     const tableBody = document.getElementById('prescription-medications-list');
     
     const row = document.createElement('tr');
-    // Le médecin ne voit pas le prix dans le tableau
     row.innerHTML = `
         <td>${med.name}</td>
         <td><input type="text" class="form-control" placeholder="Ex: 1 comprimé matin et soir" value="1 comprimé 3x/jour"></td>
@@ -737,86 +573,9 @@ function searchDoctorAppointment() {
     container.innerHTML = html;
 }
 
-// Fonctions de notification pour laboratoire et pharmacie
-function sendNotificationToLab(transaction) {
-    const labUsers = state.users.filter(u => u.role === 'lab' && u.active);
-    labUsers.forEach(user => {
-        const message = {
-            id: 'MSG' + Date.now() + Math.random(),
-            sender: state.currentUser.username,
-            senderRole: state.currentRole,
-            recipient: user.username,
-            recipientRole: user.role,
-            subject: 'Nouvelle analyse prescrite',
-            content: `Analyse prescrite pour ${transaction.patientName}: ${transaction.service}. ID transaction: ${transaction.id}`,
-            timestamp: new Date().toISOString(),
-            read: false,
-            type: 'lab_prescription'
-        };
-        state.messages.push(message);
-    });
-    updateMessageBadge();
-    // Émettre un toast de notification
-    showNotification(`Nouvelle analyse pour ${transaction.patientName}`, 'info');
-}
-
-function sendNotificationToPharmacy(transaction) {
-    const pharmacyUsers = state.users.filter(u => u.role === 'pharmacy' && u.active);
-    pharmacyUsers.forEach(user => {
-        const message = {
-            id: 'MSG' + Date.now() + Math.random(),
-            sender: state.currentUser.username,
-            senderRole: state.currentRole,
-            recipient: user.username,
-            recipientRole: user.role,
-            subject: 'Nouvelle prescription médicamenteuse',
-            content: `Médicament prescrit pour ${transaction.patientName}: ${transaction.service}. ID transaction: ${transaction.id}`,
-            timestamp: new Date().toISOString(),
-            read: false,
-            type: 'pharmacy_prescription'
-        };
-        state.messages.push(message);
-    });
-    updateMessageBadge();
-    showNotification(`Nouvelle prescription pour ${transaction.patientName}`, 'info');
-}
-
-// Nouvelle fonction : notification à la caisse
-function sendNotificationToCashier(transactions) {
-    const cashierUsers = state.users.filter(u => u.role === 'cashier' && u.active);
-    if (cashierUsers.length === 0) return;
-    
-    const patientName = transactions[0]?.patientName || 'Patient';
-    const totalAmount = transactions.reduce((sum, t) => sum + t.amount, 0);
-    const serviceCount = transactions.length;
-    
-    cashierUsers.forEach(user => {
-        const message = {
-            id: 'MSG' + Date.now() + Math.random(),
-            sender: state.currentUser.username,
-            senderRole: state.currentRole,
-            recipient: user.username,
-            recipientRole: user.role,
-            subject: 'Nouvelle consultation - Paiement requis',
-            content: `Consultation pour ${patientName} : ${serviceCount} service(s), montant total : ${totalAmount} Gdes.`,
-            timestamp: new Date().toISOString(),
-            read: false,
-            type: 'cashier_notification'
-        };
-        state.messages.push(message);
-    });
-    updateMessageBadge();
-    showNotification(`Nouvelle consultation pour ${patientName} - veuillez procéder au paiement`, 'info');
-}
-
 // Initialisation du module médecin
 document.addEventListener('DOMContentLoaded', () => {
     if (document.getElementById('doctor-patient-search')) {
         setupDoctor();
     }
 });
-
-// Rendre les fonctions accessibles globalement
-window.addMedicationToPrescription = addMedicationToPrescription;
-window.removeMedicationFromPrescription = removeMedicationFromPrescription;
-window.checkStockWarnings = checkStockWarnings;

@@ -55,7 +55,7 @@ const state = {
     hospitalLogo: null,
     exchangeRate: 130,
     
-    // NOUVEAUX ÉTATS
+    // NOUVEAUX ÉTATS AJOUTÉS
     pettyCash: 50000,
     mainCash: 1000000,
     creditAccounts: {},
@@ -72,26 +72,14 @@ const state = {
             canEditAllData: true
         },
         responsible: {
-            canModifyAllTransactions: false,
+            canModifyAllTransactions: true,
             canDeleteAllTransactions: false,
-            canManagePettyCash: true,
+            canManagePettyCash: false,
             canGenerateAllReports: true,
             canManageAllUsers: false,
             canEditAllData: false
         }
-    },
-    
-    // NOUVEAUTÉS 2025
-    notifications: [], // file d'attente des notifications (optionnel)
-    suppliers: [],     // fournisseurs
-    paymentMethodBalances: {
-        cash: 0,
-        moncash: 0,
-        natcash: 0,
-        card: 0,
-        external: 0
-    },
-    employeePayments: [] // historique des paiements employés
+    }
 };
 
 function updateLogoDisplay() {
@@ -235,9 +223,6 @@ function viewPatientCard(patientId) {
     } else if (patient.hasCreditPrivilege) {
         typeElement.textContent += ` CRÉDIT (${patient.creditLimit} Gdes)`;
         typeElement.classList.add('credit-tag');
-    } else if (patient.hospitalized) {
-        typeElement.textContent += ' HOSPITALISÉ';
-        typeElement.classList.add('hospitalized-tag');
     }
     
     const container = document.getElementById('patient-card-container');
@@ -294,10 +279,7 @@ function loadDemoData() {
             privilegeGrantedDate: null,
             registrationDate: new Date().toISOString().split('T')[0],
             registrationTime: '08:30',
-            registeredBy: 'secretary',
-            hospitalized: false,
-            hospitalizationStartDate: null,
-            hospitalizationServices: []
+            registeredBy: 'secretary'
         },
         {
             id: 'URG0002',
@@ -318,8 +300,7 @@ function loadDemoData() {
             privilegeGrantedDate: new Date().toISOString(),
             registrationDate: new Date().toISOString().split('T')[0],
             registrationTime: '09:15',
-            registeredBy: 'secretary',
-            hospitalized: false
+            registeredBy: 'secretary'
         },
         {
             id: 'PED0003',
@@ -340,8 +321,7 @@ function loadDemoData() {
             privilegeGrantedDate: new Date().toISOString(),
             registrationDate: new Date().toISOString().split('T')[0],
             registrationTime: '10:00',
-            registeredBy: 'secretary',
-            hospitalized: false
+            registeredBy: 'secretary'
         },
         {
             id: 'EXT0004',
@@ -362,8 +342,7 @@ function loadDemoData() {
             privilegeGrantedDate: null,
             registrationDate: new Date().toISOString().split('T')[0],
             registrationTime: '11:00',
-            registeredBy: 'secretary',
-            hospitalized: false
+            registeredBy: 'secretary'
         },
         {
             id: 'CRD0005',
@@ -384,32 +363,7 @@ function loadDemoData() {
             privilegeGrantedDate: new Date().toISOString(),
             registrationDate: new Date().toISOString().split('T')[0],
             registrationTime: '14:00',
-            registeredBy: 'secretary',
-            hospitalized: false
-        },
-        {
-            id: 'HOS0006',
-            fullName: 'Gérard Hospitalisé',
-            birthDate: '1970-02-10',
-            address: '303 Rue de l\'Hôpital',
-            phone: '5678-9012',
-            responsible: '',
-            type: 'normal',
-            allergies: 'Aucune',
-            notes: 'Patient hospitalisé',
-            vip: false,
-            sponsored: false,
-            discountPercentage: 0,
-            hasCreditPrivilege: false,
-            creditLimit: 0,
-            creditUsed: 0,
-            privilegeGrantedDate: null,
-            registrationDate: new Date().toISOString().split('T')[0],
-            registrationTime: '09:00',
-            registeredBy: 'secretary',
-            hospitalized: true,
-            hospitalizationStartDate: new Date().toISOString().split('T')[0],
-            hospitalizationServices: []
+            registeredBy: 'secretary'
         }
     );
     
@@ -423,9 +377,7 @@ function loadDemoData() {
             unit: 'comprimés',
             alertThreshold: 20,
             price: 5,
-            reserved: 0,
-            supplier: null,
-            purchaseType: 'cash'
+            reserved: 0
         },
         {
             id: 'MED002',
@@ -625,13 +577,6 @@ function loadDemoData() {
     
     state.pettyCash = 50000;
     state.mainCash = 1000000;
-    state.paymentMethodBalances = {
-        cash: 800000,
-        moncash: 100000,
-        natcash: 50000,
-        card: 40000,
-        external: 10000
-    };
     
     state.cashierBalances = {
         'cashier': {
@@ -649,19 +594,7 @@ function loadDemoData() {
         }
     };
     
-    // Fournisseurs
-    state.suppliers = [
-        { id: 1, name: 'PharmaLab', type: 'credit', contact: 'contact@pharmalab.com' },
-        { id: 2, name: 'MediDist', type: 'cash', contact: '555-1234' }
-    ];
-    
-    // Ajouter le fournisseur aux médicaments existants
-    state.medicationStock[0].supplier = 1;
-    state.medicationStock[0].purchaseType = 'credit';
-    state.medicationStock[1].supplier = 2;
-    state.medicationStock[1].purchaseType = 'cash';
-    
-    state.patientCounter = 7;
+    state.patientCounter = 6;
     state.transactionCounter = 5;
 }
 
@@ -701,23 +634,7 @@ function loadStateFromLocalStorage() {
                     patient.creditLimit = 0;
                     patient.creditUsed = 0;
                 }
-                if (patient.hospitalized === undefined) {
-                    patient.hospitalized = false;
-                    patient.hospitalizationStartDate = null;
-                    patient.hospitalizationServices = [];
-                }
             });
-            
-            // S'assurer que paymentMethodBalances existe
-            if (!state.paymentMethodBalances) {
-                state.paymentMethodBalances = { cash:0, moncash:0, natcash:0, card:0, external:0 };
-            }
-            
-            // S'assurer que suppliers existe
-            if (!state.suppliers) state.suppliers = [];
-            
-            // S'assurer que employeePayments existe
-            if (!state.employeePayments) state.employeePayments = [];
             
             console.log('État chargé depuis localStorage');
             return true;

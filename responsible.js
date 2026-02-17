@@ -19,16 +19,16 @@ function setupResponsible() {
     // 1. Masquer / désactiver les éléments interdits pour le responsable
     disableForbiddenElements();
 
-    // 2. Attacher nos propres écouteurs d'événements
+    // 2. Remplacer les fonctions de statistiques par des versions sans montants
+    window.updateAdminStats = respUpdateAdminStatsNoAmounts;
+    window.updateCharts = respUpdateChartsNoAmounts;
+    window.updateAdminExtendedDisplay = respUpdateAdminExtendedNoAmounts;
+
+    // 3. Attacher nos propres écouteurs d'événements
     attachResponsibleEventListeners();
 
-    // 3. Mettre à jour l'affichage (statistiques, caisses)
+    // 4. Mettre à jour l'affichage (statistiques, caisses)
     respUpdateAdminDisplay();
-
-    // 4. Initialiser les listes (fournisseurs, employés) en lecture seule
-    respUpdateSuppliersList();
-    respUpdateEmployeePaymentsHistory();
-    respUpdatePaymentMethodBalancesDisplay();
 }
 
 // --------------------------------------
@@ -59,15 +59,17 @@ function disableForbiddenElements() {
         alert("Vous n'avez pas la permission de modifier les transactions.");
     };
 
-    // --- MODIFICATION : Masquer les montants dans les rapports et historiques ---
-    // (géré dans les fonctions resp*)
+    // --- MODIFICATION : Masquer la grande caisse (main cash) ---
+    const mainCashBalance = document.getElementById('main-cash-balance');
+    if (mainCashBalance) {
+        mainCashBalance.style.display = 'none';
+        // Optionnel : masquer aussi le label parent
+        const parent = mainCashBalance.closest('.d-flex, .card, .balance-item');
+        if (parent) parent.style.display = 'none';
+    }
 
-    // Désactiver les boutons d'ajout de fournisseur et de paiement employé
-    const addSupplierBtn = document.getElementById('add-supplier');
-    if (addSupplierBtn) addSupplierBtn.style.display = 'none';
-
-    const payEmployeeBtn = document.getElementById('pay-employee-btn');
-    if (payEmployeeBtn) payEmployeeBtn.style.display = 'none';
+    // --- MODIFICATION : Masquer les montants des services dans d'éventuels affichages statiques ---
+    // (les montants dans l'historique patient et les rapports sont traités ailleurs)
 }
 
 // --------------------------------------
@@ -180,10 +182,11 @@ function attachResponsibleEventListeners() {
         });
     }
 
-    // Gestion des crédits (lecture seule – on garde les fonctions d'affichage mais on désactive l'ajout)
+    // Gestion des crédits
     const addCreditBtn = document.getElementById('add-credit-btn');
     if (addCreditBtn) {
-        addCreditBtn.style.display = 'none';
+        addCreditBtn.removeEventListener('click', addPatientCredit);
+        addCreditBtn.addEventListener('click', respAddPatientCredit);
     }
 
     const viewCreditHistoryBtn = document.getElementById('view-credit-history');
@@ -221,22 +224,6 @@ function attachResponsibleEventListeners() {
     // Désactiver complètement la modification utilisateur
     const editUserBtn = document.querySelector('#users-list .btn-warning');
     if (editUserBtn) editUserBtn.style.display = 'none'; // sera géré dans updateUsersList si besoin
-
-    // Désactiver les boutons d'ajout/modification dans les paramètres
-    const addConsultationBtn = document.getElementById('add-consultation-type');
-    if (addConsultationBtn) addConsultationBtn.style.display = 'none';
-    const addVitalBtn = document.getElementById('add-vital-type');
-    if (addVitalBtn) addVitalBtn.style.display = 'none';
-    const addLabBtn = document.getElementById('add-lab-analysis-type');
-    if (addLabBtn) addLabBtn.style.display = 'none';
-    const addExternalBtn = document.getElementById('add-external-service-type');
-    if (addExternalBtn) addExternalBtn.style.display = 'none';
-    const addUserBtn = document.getElementById('add-user');
-    if (addUserBtn) addUserBtn.style.display = 'none';
-    const addSupplierBtn = document.getElementById('add-supplier');
-    if (addSupplierBtn) addSupplierBtn.style.display = 'none';
-    const addMedSettingsBtn = document.getElementById('add-medication-settings');
-    if (addMedSettingsBtn) addMedSettingsBtn.style.display = 'none';
 }
 
 // ==================== FONCTIONS RESPONSABLE ====================
@@ -272,14 +259,6 @@ function respSearchPatient() {
     document.getElementById('admin-patient-name').textContent = patient.fullName + ' (' + patient.id + ')';
     document.getElementById('admin-patient-details').classList.remove('hidden');
 
-    // Remplir les notes (lecture seule)
-    document.getElementById('patient-allergies-admin').value = patient.allergies || '';
-    document.getElementById('patient-notes-admin').value = patient.notes || '';
-    // Désactiver les champs de notes
-    document.getElementById('patient-allergies-admin').disabled = true;
-    document.getElementById('patient-notes-admin').disabled = true;
-    document.querySelector('#patient-notes-section .btn').style.display = 'none';
-
     // Mise à jour du selecteur de privilège (identique admin)
     const privilegeSelect = document.getElementById('privilege-type');
     const discountSection = document.getElementById('discount-section');
@@ -307,12 +286,6 @@ function respSearchPatient() {
         creditSection.classList.add('hidden');
     }
 
-    // Désactiver le select et les champs de privilège (lecture seule)
-    privilegeSelect.disabled = true;
-    discountInput.disabled = true;
-    creditAmountInput.disabled = true;
-    document.getElementById('save-privilege').style.display = 'none';
-
     // --- MODIFICATION : Historique des transactions – VERSION SANS MONTANTS ---
     const history = state.transactions.filter(t => t.patientId === patient.id);
     // En-tête sans la colonne Montant
@@ -332,13 +305,119 @@ function respSearchPatient() {
     html += '</tbody></table>';
     document.getElementById('admin-patient-history').innerHTML = html;
 
-    // Afficher les informations de crédit (lecture seule)
+    // Afficher les informations de crédit
     respUpdateCreditDisplay(patientId);
 }
 
-// Sauvegarder les privilèges (désactivé pour responsable – ne fait rien)
+// Sauvegarder les privilèges (identique à admin, mais sans appliquer de réduction aux transactions existantes)
 function respSavePrivilege() {
-    alert("Vous n'avez pas la permission de modifier les privilèges.");
+    const patientId = document.getElementById('admin-patient-search').value.trim();
+    const patient = state.patients.find(p => p.id === patientId);
+    if (!patient) return;
+
+    const privilegeType = document.getElementById('privilege-type').value;
+    const discountPercentage = parseInt(document.getElementById('discount-percentage').value) || 0;
+    const creditAmount = parseFloat(document.getElementById('credit-amount-input').value) || 0;
+
+    // Réinitialiser tous les privilèges
+    patient.vip = false;
+    patient.sponsored = false;
+    patient.discountPercentage = 0;
+    patient.hasCreditPrivilege = false;
+    patient.creditLimit = 0;
+    patient.creditUsed = 0;
+    patient.privilegeGrantedDate = null;
+
+    if (privilegeType === 'vip') {
+        patient.vip = true;
+        patient.privilegeGrantedDate = new Date().toISOString();
+        alert("Patient marqué comme VIP (les prochains services seront gratuits)");
+    } else if (privilegeType === 'sponsored') {
+        patient.sponsored = true;
+        patient.discountPercentage = discountPercentage;
+        patient.privilegeGrantedDate = new Date().toISOString();
+        alert(`Patient marqué comme sponsorisé avec ${discountPercentage}% de réduction (applicable aux futures transactions)`);
+    } else if (privilegeType === 'credit') {
+        patient.hasCreditPrivilege = true;
+        patient.creditLimit = creditAmount;
+        patient.creditUsed = 0;
+        patient.privilegeGrantedDate = new Date().toISOString();
+
+        if (!state.creditAccounts[patientId]) {
+            state.creditAccounts[patientId] = {
+                balance: 0,
+                limit: creditAmount,
+                used: 0,
+                available: creditAmount,
+                history: []
+            };
+        } else {
+            state.creditAccounts[patientId].limit = creditAmount;
+            state.creditAccounts[patientId].available = creditAmount - state.creditAccounts[patientId].used;
+        }
+        alert(`Patient a reçu un privilège crédit de ${creditAmount} Gdes`);
+    } else {
+        alert("Privilèges retirés du patient");
+    }
+
+    // Rafraîchir l'affichage
+    respSearchPatient();
+}
+
+// Ajouter du crédit à un patient (sans modification des transactions)
+function respAddPatientCredit() {
+    const patientId = document.getElementById('admin-patient-search').value.trim();
+    const creditAmount = parseFloat(document.getElementById('credit-amount').value);
+    const creditNote = document.getElementById('credit-note').value;
+
+    if (!patientId || !creditAmount || creditAmount <= 0) {
+        alert("Veuillez saisir un ID patient et un montant valide !");
+        return;
+    }
+
+    const patient = state.patients.find(p => p.id === patientId);
+    if (!patient) {
+        alert("Patient non trouvé !");
+        return;
+    }
+
+    if (!patient.hasCreditPrivilege) {
+        alert("Le patient n'a pas le privilège crédit !");
+        return;
+    }
+
+    patient.creditLimit = (patient.creditLimit || 0) + creditAmount;
+
+    if (!state.creditAccounts[patientId]) {
+        state.creditAccounts[patientId] = {
+            balance: 0,
+            limit: patient.creditLimit,
+            used: patient.creditUsed || 0,
+            available: patient.creditLimit - (patient.creditUsed || 0),
+            history: []
+        };
+    } else {
+        state.creditAccounts[patientId].limit += creditAmount;
+        state.creditAccounts[patientId].available = state.creditAccounts[patientId].limit - state.creditAccounts[patientId].used;
+    }
+
+    // Historique
+    state.creditAccounts[patientId].history.push({
+        date: new Date().toISOString().split('T')[0],
+        time: new Date().toLocaleTimeString('fr-FR'),
+        amount: creditAmount,
+        type: 'credit_augmentation',
+        by: state.currentUser.username,
+        note: creditNote || 'Crédit ajouté manuellement'
+    });
+
+    alert(`Crédit de ${creditAmount} Gdes ajouté au patient ${patient.fullName}. Nouvelle limite: ${patient.creditLimit} Gdes`);
+
+    document.getElementById('credit-amount').value = '';
+    document.getElementById('credit-note').value = '';
+
+    respSearchPatient();
+    respUpdateCreditDisplay(patientId);
 }
 
 // Afficher l'historique des crédits (identique admin)
@@ -503,7 +582,7 @@ function respViewCashierBalances() {
     document.body.appendChild(modal);
 }
 
-// Mise à jour de l'affichage du crédit (lecture seule)
+// Mise à jour de l'affichage du crédit
 function respUpdateCreditDisplay(patientId) {
     const patient = state.patients.find(p => p.id === patientId);
     const creditAccount = state.creditAccounts[patientId];
@@ -533,7 +612,6 @@ function respUpdateCreditDisplay(patientId) {
 
 // Générer un rapport de toutes les transactions sans afficher les montants
 function respGenerateReportNoAmounts() {
-    const reportType = document.getElementById('report-type').value;
     const startDate = document.getElementById('report-start-date')?.value;
     const endDate = document.getElementById('report-end-date')?.value;
 
@@ -549,137 +627,157 @@ function respGenerateReportNoAmounts() {
     // Trier par date décroissante
     transactions.sort((a, b) => new Date(b.date) - new Date(a.date));
 
+    const container = document.getElementById('report-results');
+    if (!container) return;
+
     let html = '<h4>Rapport des services (montants masqués)</h4>';
-    
-    if (reportType === 'financial') {
-        // Rapport financier simplifié (sans montants)
-        html += '<p><strong>Rapport financier (montants non affichés)</strong></p>';
-        html += '<p>Soldes des caisses :</p>';
-        html += `<ul>
-            <li>Grande caisse : ${state.mainCash.toLocaleString()} Gdes</li>
-            <li>Petite caisse : ${state.pettyCash.toLocaleString()} Gdes</li>
-            <li>Espèces : ${state.paymentMethodBalances?.cash.toLocaleString()} Gdes</li>
-            <li>MonCash : ${state.paymentMethodBalances?.moncash.toLocaleString()} Gdes</li>
-            <li>NatCash : ${state.paymentMethodBalances?.natcash.toLocaleString()} Gdes</li>
-            <li>Carte : ${state.paymentMethodBalances?.card.toLocaleString()} Gdes</li>
-            <li>Externe : ${state.paymentMethodBalances?.external.toLocaleString()} Gdes</li>
-        </ul>`;
+    html += '<table class="table-container"><thead><tr><th>Date</th><th>Patient</th><th>Service</th><th>Statut</th><th>Type</th></tr></thead><tbody>';
+
+    if (transactions.length === 0) {
+        html += '<tr><td colspan="5" class="text-center">Aucune transaction trouvée</td></tr>';
     } else {
-        html += '<table class="table-container"><thead><tr><th>Date</th><th>Patient</th><th>Service</th><th>Statut</th><th>Type</th></tr></thead><tbody>';
-
-        if (transactions.length === 0) {
-            html += '<tr><td colspan="5" class="text-center">Aucune transaction trouvée</td></tr>';
-        } else {
-            transactions.forEach(t => {
-                const patient = state.patients.find(p => p.id === t.patientId);
-                const patientName = patient ? patient.fullName : t.patientId;
-                html += `<tr>
-                    <td>${t.date}</td>
-                    <td>${patientName}</td>
-                    <td>${t.service}</td>
-                    <td>${t.status}</td>
-                    <td>${t.type}</td>
-                </tr>`;
-            });
-        }
-        html += '</tbody></table>';
+        transactions.forEach(t => {
+            const patient = state.patients.find(p => p.id === t.patientId);
+            const patientName = patient ? patient.fullName : t.patientId;
+            html += `<tr>
+                <td>${t.date}</td>
+                <td>${patientName}</td>
+                <td>${t.service}</td>
+                <td>${t.status}</td>
+                <td>${t.type}</td>
+            </tr>`;
+        });
     }
-
-    // Afficher dans un modal ou dans un conteneur existant ?
-    const modal = document.createElement('div');
-    modal.className = 'transaction-details-modal';
-    modal.innerHTML = `<div class="transaction-details-content">${html}<button class="btn btn-secondary mt-3" onclick="this.closest('.transaction-details-modal').remove()">Fermer</button></div>`;
-    document.body.appendChild(modal);
+    html += '</tbody></table>';
+    container.innerHTML = html;
 }
 
 // Générer un rapport utilisateur sans montants
 function respGenerateUserReportNoAmounts() {
-    const users = state.users;
-    const userReport = {};
+    const user = document.getElementById('report-user-select')?.value;
+    if (!user) {
+        alert("Veuillez sélectionner un utilisateur.");
+        return;
+    }
 
-    users.forEach(user => {
-        const userTransactions = state.transactions.filter(t => 
-            t.createdBy === user.username || 
-            t.paymentAgent === user.username
-        );
+    const startDate = document.getElementById('report-start-date')?.value;
+    const endDate = document.getElementById('report-end-date')?.value;
 
-        userReport[user.username] = {
-            name: user.name,
-            role: user.role,
-            transactionsCreated: userTransactions.filter(t => t.createdBy === user.username).length,
-            transactionsProcessed: userTransactions.filter(t => t.paymentAgent === user.username).length,
-            lastActivity: userTransactions.length > 0 ? 
-                new Date(Math.max(...userTransactions.map(t => new Date(t.date + ' ' + t.time).getTime()))).toLocaleDateString('fr-FR') : 'Jamais'
-        };
-    });
+    let transactions = state.transactions?.filter(t => t.cashier === user || t.createdBy === user) || [];
+    if (startDate) transactions = transactions.filter(t => t.date >= startDate);
+    if (endDate) transactions = transactions.filter(t => t.date <= endDate);
+    transactions.sort((a, b) => new Date(b.date) - new Date(a.date));
 
-    let html = '<h4>Rapport d\'activité des utilisateurs (montants masqués)</h4>';
-    html += '<table class="table-container"><thead><tr><th>Utilisateur</th><th>Rôle</th><th>Créées</th><th>Traitées</th><th>Dernière activité</th></tr></thead><tbody>';
-    
-    for (const [username, data] of Object.entries(userReport)) {
-        html += `<tr><td>${data.name} (${username})</td><td>${data.role}</td><td>${data.transactionsCreated}</td><td>${data.transactionsProcessed}</td><td>${data.lastActivity}</td></tr>`;
+    const container = document.getElementById('report-results');
+    if (!container) return;
+
+    let html = `<h4>Rapport pour ${user} (montants masqués)</h4>`;
+    html += '<table class="table-container"><thead><tr><th>Date</th><th>Patient</th><th>Service</th><th>Statut</th><th>Type</th></tr></thead><tbody>';
+
+    if (transactions.length === 0) {
+        html += '<tr><td colspan="5" class="text-center">Aucune transaction trouvée</td></tr>';
+    } else {
+        transactions.forEach(t => {
+            const patient = state.patients.find(p => p.id === t.patientId);
+            const patientName = patient ? patient.fullName : t.patientId;
+            html += `<tr>
+                <td>${t.date}</td>
+                <td>${patientName}</td>
+                <td>${t.service}</td>
+                <td>${t.status}</td>
+                <td>${t.type}</td>
+            </tr>`;
+        });
     }
     html += '</tbody></table>';
-
-    const modal = document.createElement('div');
-    modal.className = 'transaction-details-modal';
-    modal.innerHTML = `<div class="transaction-details-content">${html}<button class="btn btn-secondary mt-3" onclick="this.closest('.transaction-details-modal').remove()">Fermer</button></div>`;
-    document.body.appendChild(modal);
+    container.innerHTML = html;
 }
 
-// Export CSV sans montants (version simplifiée)
+// Export CSV sans montants
 function respExportReportToCSVNoAmounts() {
-    alert("L'export CSV n'est pas disponible pour le responsable (les montants seraient inclus).");
+    // On récupère le tableau généré dans #report-results
+    const table = document.querySelector('#report-results table');
+    if (!table) {
+        alert("Aucun rapport à exporter.");
+        return;
+    }
+
+    let csv = [];
+    const rows = table.querySelectorAll('tr');
+    for (let row of rows) {
+        const cols = row.querySelectorAll('td, th');
+        const rowData = [];
+        cols.forEach(col => rowData.push(col.innerText));
+        csv.push(rowData.join(','));
+    }
+
+    const blob = new Blob([csv.join('\n')], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `rapport_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+    window.URL.revokeObjectURL(url);
 }
 
-// Voir les soldes des caisses (lecture seule)
-function respUpdatePaymentMethodBalancesDisplay() {
-    document.getElementById('cash-balance').textContent = (state.paymentMethodBalances?.cash || 0).toLocaleString() + ' Gdes';
-    document.getElementById('moncash-balance').textContent = (state.paymentMethodBalances?.moncash || 0).toLocaleString() + ' Gdes';
-    document.getElementById('natcash-balance').textContent = (state.paymentMethodBalances?.natcash || 0).toLocaleString() + ' Gdes';
-    document.getElementById('card-balance').textContent = (state.paymentMethodBalances?.card || 0).toLocaleString() + ' Gdes';
-    document.getElementById('external-balance').textContent = (state.paymentMethodBalances?.external || 0).toLocaleString() + ' Gdes';
-}
+// ========== STATISTIQUES SANS MONTANTS POUR LE RESPONSABLE ==========
 
-// Afficher les fournisseurs (lecture seule)
-function respUpdateSuppliersList() {
-    const container = document.getElementById('suppliers-list');
-    if (!container) return;
+// Version allégée de updateAdminStats : affiche uniquement des compteurs (pas de montants)
+function respUpdateAdminStatsNoAmounts() {
+    const statsContainer = document.getElementById('admin-stats');
+    if (!statsContainer) return;
 
-    let html = '';
-    state.suppliers.forEach(s => {
-        html += `<tr><td>${s.name}</td><td>${s.type === 'credit' ? 'Crédit' : 'Comptant'}</td><td>${s.contact || ''}</td><td>-</td></tr>`;
+    const totalPatients = state.patients.length;
+    const totalTransactions = state.transactions.length;
+
+    // Compter les transactions par service
+    const serviceCounts = {};
+    state.transactions.forEach(t => {
+        serviceCounts[t.service] = (serviceCounts[t.service] || 0) + 1;
     });
-    container.innerHTML = html || '<tr><td colspan="4" class="text-center">Aucun fournisseur</td></tr>';
+
+    let serviceHtml = '<ul>';
+    for (const [service, count] of Object.entries(serviceCounts)) {
+        serviceHtml += `<li>${service} : ${count} consultation(s)</li>`;
+    }
+    serviceHtml += '</ul>';
+
+    statsContainer.innerHTML = `
+        <h4>Statistiques (montants masqués)</h4>
+        <p><strong>Total patients :</strong> ${totalPatients}</p>
+        <p><strong>Total transactions :</strong> ${totalTransactions}</p>
+        <h5>Répartition par service :</h5>
+        ${serviceHtml}
+    `;
 }
 
-// Afficher l'historique des paiements employés (lecture seule)
-function respUpdateEmployeePaymentsHistory() {
-    const container = document.getElementById('employee-payments-history');
-    if (!container) return;
+// Version sans montants pour les graphiques (on les désactive ou on montre un message)
+function respUpdateChartsNoAmounts() {
+    const chartsContainer = document.getElementById('charts-container');
+    if (chartsContainer) {
+        chartsContainer.innerHTML = '<p>Graphiques non disponibles (responsable)</p>';
+    }
+}
 
-    let html = '';
-    (state.employeePayments || []).slice().reverse().forEach(p => {
-        html += `<tr><td>${p.username}</td><td>${p.amount} Gdes</td><td>${p.date} ${p.time}</td><td>${p.method}</td></tr>`;
-    });
-    container.innerHTML = html || '<tr><td colspan="4" class="text-center">Aucun paiement</td></tr>';
+// Extension éventuelle (on la vide)
+function respUpdateAdminExtendedNoAmounts() {
+    // Ne rien faire ou afficher des infos non monétaires si besoin
+    const extendedContainer = document.getElementById('admin-extended');
+    if (extendedContainer) {
+        // On peut par exemple y mettre des stats supplémentaires sans montants
+    }
 }
 
 // Mettre à jour les affichages administratifs (statistiques, caisses)
 function respUpdateAdminDisplay() {
-    if (typeof updateAdminStats === 'function') updateAdminStats();
-    if (typeof updateCharts === 'function') updateCharts();
-    if (typeof updateAdminExtendedDisplay === 'function') updateAdminExtendedDisplay();
+    // Appeler nos propres versions sans montants
+    respUpdateAdminStatsNoAmounts();
+    respUpdateChartsNoAmounts();
+    respUpdateAdminExtendedNoAmounts();
 
-    // Mettre à jour les soldes des caisses
+    // Mettre à jour UNIQUEMENT la petite caisse (la grande caisse est masquée)
     const pettyCashEl = document.getElementById('petty-cash-balance');
     if (pettyCashEl) pettyCashEl.textContent = (state.pettyCash || 0).toLocaleString() + ' Gdes';
-    const mainCashEl = document.getElementById('main-cash-balance');
-    if (mainCashEl) mainCashEl.textContent = (state.mainCash || 0).toLocaleString() + ' Gdes';
-    
-    respUpdatePaymentMethodBalancesDisplay();
-    respUpdateSuppliersList();
-    respUpdateEmployeePaymentsHistory();
 }
 
 // Rendre les fonctions accessibles globalement (pour les appels onclick)
@@ -688,9 +786,7 @@ window.respUpdateCreditDisplay = respUpdateCreditDisplay;
 // On surcharge aussi les anciennes fonctions pour éviter les erreurs
 window.searchAdminPatient = respSearchPatient;
 window.savePrivilege = respSavePrivilege;
-window.addPatientCredit = function() {
-    alert("Opération non autorisée.");
-};
+window.addPatientCredit = respAddPatientCredit;
 window.viewCreditHistory = respViewCreditHistory;
 window.transferToPettyCash = function() {
     alert("Opération non autorisée. Utilisez le retrait avec motif et agent.");

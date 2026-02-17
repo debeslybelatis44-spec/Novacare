@@ -665,32 +665,3 @@ tr:hover { background-color: #f8fbff; }
         page-break-inside: avoid;
     }
 }
-
-/* Styles pour les toasts de notification */
-.toast-notification {
-    position: fixed;
-    top: 20px;
-    right: 20px;
-    background: #1a6bca;
-    color: white;
-    padding: 15px 20px;
-    border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-    z-index: 9999;
-    animation: slideIn 0.3s ease-out, fadeOut 0.3s 3.7s ease-out forwards;
-    max-width: 350px;
-}
-
-.toast-notification.success { background: #28a745; }
-.toast-notification.warning { background: #ffc107; color: #212529; }
-.toast-notification.error { background: #dc3545; }
-
-@keyframes slideIn {
-    from { transform: translateX(100%); opacity: 0; }
-    to { transform: translateX(0); opacity: 1; }
-}
-
-@keyframes fadeOut {
-    from { opacity: 1; }
-    to { opacity: 0; }
-}
