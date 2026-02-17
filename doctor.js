@@ -1,6 +1,43 @@
 // ==================== MÉDECIN ====================
 let currentDoctorPatient = null;
 
+// Son de notification long et fort (4 secondes)
+function playNotificationSound(duration = 4000, volume = 0.9) {
+    try {
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const oscillator = audioCtx.createOscillator();
+        const gainNode = audioCtx.createGain();
+        oscillator.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+        oscillator.frequency.value = 880; // La note A
+        gainNode.gain.value = volume;
+        oscillator.start();
+        oscillator.stop(audioCtx.currentTime + duration / 1000);
+    } catch (e) {
+        console.warn("Web Audio API not supported, fallback to simple beep");
+        try {
+            const audio = new Audio('data:audio/wav;base64,UklGRlwAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YVQAAABJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJ');
+            audio.volume = volume;
+            audio.play().catch(e => console.log('Son bloqué par le navigateur'));
+        } catch (e) {}
+    }
+}
+
+function showNotification(message, type = 'info') {
+    // Créer un toast
+    const toast = document.createElement('div');
+    toast.className = `toast-notification ${type}`;
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    
+    // Jouer le son long et fort
+    playNotificationSound(4000, 0.9);
+    
+    setTimeout(() => {
+        toast.remove();
+    }, 4000);
+}
+
 function setupDoctor() {
     document.getElementById('search-doctor-patient').addEventListener('click', () => {
         const search = document.getElementById('doctor-patient-search').value.toLowerCase();
@@ -252,53 +289,97 @@ function setupDoctor() {
             return;
         }
         
+        // Récupération du type de consultation
+        const consultationTypeSelect = document.getElementById('doctor-consultation-type');
+        const selectedOption = consultationTypeSelect.options[consultationTypeSelect.selectedIndex];
+        if (!selectedOption.value) {
+            alert("Veuillez sélectionner un type de consultation.");
+            return;
+        }
+        const consultationPrice = parseFloat(selectedOption.dataset.price);
+        const consultationName = selectedOption.text;
+        
         const diagnosis = document.getElementById('consultation-diagnosis').value;
         const notes = document.getElementById('consultation-notes').value;
         const followupDate = document.getElementById('followup-date').value;
         const followupTime = document.getElementById('followup-time').value;
         const hospitalize = document.getElementById('hospitalize-patient').checked;
         
-        // Si on coche hospitaliser, on marque le patient comme hospitalisé
+        // Gestion de l'hospitalisation
         if (hospitalize && !currentDoctorPatient.hospitalized) {
             currentDoctorPatient.hospitalized = true;
             currentDoctorPatient.hospitalizationStartDate = new Date().toISOString().split('T')[0];
-            currentDoctorPatient.hospitalizationServices = currentDoctorPatient.hospitalizationServices || [];
+            currentDoctorPatient.currentHospitalizationId = 'HOSP-' + currentDoctorPatient.id + '-' + Date.now();
+            currentDoctorPatient.hospitalizationServices = [];
             alert("Patient marqué comme hospitalisé. Les services seront comptabilisés et facturés en fin d'hospitalisation.");
         }
         
-        const consultation = {
+        // Préparation du statut de paiement par défaut
+        let paymentStatus = 'unpaid';
+        let paymentMethod = null;
+        let paymentNote = '';
+        
+        if (currentDoctorPatient.vip && !currentDoctorPatient.hospitalized) {
+            paymentStatus = 'paid';
+            paymentMethod = 'vip';
+        } else if (currentDoctorPatient.sponsored && !currentDoctorPatient.hospitalized) {
+            paymentStatus = 'unpaid'; // la réduction sera appliquée sur le montant
+        }
+        
+        // Collecte de toutes les transactions créées pour notification à la caisse
+        const createdTransactions = [];
+        
+        // --- Transaction de la consultation ---
+        let consultationAmount = consultationPrice;
+        if (currentDoctorPatient.sponsored && !currentDoctorPatient.hospitalized) {
+            consultationAmount = consultationPrice * (1 - currentDoctorPatient.discountPercentage / 100);
+        }
+        const consultationTransaction = {
+            id: 'CONS' + Date.now() + '-TR',
+            patientId: currentDoctorPatient.id,
+            patientName: currentDoctorPatient.fullName,
+            service: `Consultation: ${consultationName}`,
+            amount: consultationAmount,
+            status: paymentStatus,
+            date: new Date().toISOString().split('T')[0],
+            time: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
+            createdBy: state.currentUser.username,
+            type: 'consultation',
+            consultationTypeId: consultationTypeSelect.value,
+            paymentMethod: paymentMethod,
+            paymentNote: paymentNote
+        };
+        
+        // Ajustement pour hospitalisation
+        if (currentDoctorPatient.hospitalized) {
+            consultationTransaction.status = 'unpaid';
+            consultationTransaction.hospitalizationId = currentDoctorPatient.currentHospitalizationId;
+            consultationTransaction.paymentNote = 'Service hospitalier';
+        }
+        
+        state.consultations.push({
             id: 'CONS' + Date.now(),
             patientId: currentDoctorPatient.id,
             patientName: currentDoctorPatient.fullName,
             doctor: state.currentUser.username,
-            date: new Date().toISOString().split('T')[0],
-            time: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
+            date: consultationTransaction.date,
+            time: consultationTransaction.time,
             diagnosis: diagnosis,
             notes: notes,
             followupDate: followupDate,
             followupTime: followupTime,
             modified: false
-        };
+        });
         
-        state.consultations.push(consultation);
-        
-        // Déterminer le statut de paiement en fonction de l'hospitalisation ou des privilèges
-        let paymentStatus = 'unpaid';
-        let paymentMethod = null;
-        let paymentNote = '';
+        state.transactions.push(consultationTransaction);
+        createdTransactions.push(consultationTransaction);
         
         if (currentDoctorPatient.hospitalized) {
-            paymentStatus = 'hospitalized'; // Statut spécial pour dette d'hospitalisation
-            paymentMethod = 'hospitalization';
-            paymentNote = 'Service en cours d\'hospitalisation';
-        } else if (currentDoctorPatient.vip) {
-            paymentStatus = 'paid';
-            paymentMethod = 'vip';
-        } else if (currentDoctorPatient.sponsored) {
-            paymentStatus = 'unpaid'; // sera ajusté après réduction
+            if (!currentDoctorPatient.hospitalizationServices) currentDoctorPatient.hospitalizationServices = [];
+            currentDoctorPatient.hospitalizationServices.push(consultationTransaction);
         }
         
-        // Traitement des analyses
+        // --- Traitement des analyses ---
         const analysisCheckboxes = document.querySelectorAll('#lab-analyses-selection input:checked');
         analysisCheckboxes.forEach(cb => {
             const analysisId = parseInt(cb.value);
@@ -315,7 +396,7 @@ function setupDoctor() {
                 }
                 
                 const analysisTransaction = {
-                    id: 'LAB' + Date.now(),
+                    id: 'LAB' + Date.now() + Math.random(),
                     patientId: currentDoctorPatient.id,
                     patientName: currentDoctorPatient.fullName,
                     service: `Analyse: ${analysis.modifiedName || analysis.name}`,
@@ -337,23 +418,28 @@ function setupDoctor() {
                 };
                 
                 if (currentDoctorPatient.hospitalized) {
-                    // Stocker dans le tableau d'hospitalisation du patient
+                    analysisTransaction.status = 'unpaid';
+                    analysisTransaction.hospitalizationId = currentDoctorPatient.currentHospitalizationId;
+                    analysisTransaction.paymentNote = 'Service hospitalier';
+                }
+                
+                state.transactions.push(analysisTransaction);
+                createdTransactions.push(analysisTransaction);
+                
+                if (currentDoctorPatient.hospitalized) {
                     if (!currentDoctorPatient.hospitalizationServices) currentDoctorPatient.hospitalizationServices = [];
                     currentDoctorPatient.hospitalizationServices.push(analysisTransaction);
                 }
                 
-                state.transactions.push(analysisTransaction);
-                
-                // Notifications : si pas hospitalisé et pas VIP, on notifie la caisse
+                // Notifications existantes
                 if (!currentDoctorPatient.hospitalized && !currentDoctorPatient.vip) {
-                    sendNotificationToCashier(analysisTransaction);
+                    sendNotificationToCashier([analysisTransaction]); // Notifie la caisse individuellement (optionnel)
                 }
-                // Notifier le laboratoire
                 sendNotificationToLab(analysisTransaction);
             }
         });
         
-        // Traitement des médicaments prescrits
+        // --- Traitement des médicaments prescrits ---
         const medicationRows = document.querySelectorAll('#prescription-medications-list tr');
         medicationRows.forEach(row => {
             const medName = row.cells[0].textContent;
@@ -370,7 +456,7 @@ function setupDoctor() {
             }
             
             const medTransaction = {
-                id: 'MED' + Date.now(),
+                id: 'MED' + Date.now() + Math.random(),
                 patientId: currentDoctorPatient.id,
                 patientName: currentDoctorPatient.fullName,
                 service: `Médicament: ${medName} (${quantity} ${med.unit})`,
@@ -390,21 +476,32 @@ function setupDoctor() {
             };
             
             if (currentDoctorPatient.hospitalized) {
+                medTransaction.status = 'unpaid';
+                medTransaction.hospitalizationId = currentDoctorPatient.currentHospitalizationId;
+                medTransaction.paymentNote = 'Service hospitalier';
+            }
+            
+            state.transactions.push(medTransaction);
+            createdTransactions.push(medTransaction);
+            
+            if (currentDoctorPatient.hospitalized) {
                 if (!currentDoctorPatient.hospitalizationServices) currentDoctorPatient.hospitalizationServices = [];
                 currentDoctorPatient.hospitalizationServices.push(medTransaction);
             }
             
-            state.transactions.push(medTransaction);
-            
-            // Notifications : si pas hospitalisé et pas VIP, notifier la caisse
+            // Notifications existantes
             if (!currentDoctorPatient.hospitalized && !currentDoctorPatient.vip) {
-                sendNotificationToCashier(medTransaction);
+                sendNotificationToCashier([medTransaction]); // optionnel
             }
-            // Notifier la pharmacie
             sendNotificationToPharmacy(medTransaction);
             
             med.reserved = (med.reserved || 0) + quantity;
         });
+        
+        // Notification globale à la caisse pour l'ensemble de la consultation
+        if (createdTransactions.length > 0 && !currentDoctorPatient.vip && !currentDoctorPatient.hospitalized) {
+            sendNotificationToCashier(createdTransactions);
+        }
         
         alert("Consultation enregistrée avec succès!");
         e.target.reset();
@@ -413,7 +510,7 @@ function setupDoctor() {
         document.getElementById('stock-warnings').innerHTML = '';
         state.currentModifiedAnalysis = null;
         document.getElementById('lab-modification-panel').classList.add('hidden');
-        document.getElementById('hospitalize-patient').checked = false; // réinitialiser
+        document.getElementById('hospitalize-patient').checked = false;
     });
     
     // Le médecin ne peut pas modifier une consultation existante
@@ -645,7 +742,7 @@ function sendNotificationToLab(transaction) {
     const labUsers = state.users.filter(u => u.role === 'lab' && u.active);
     labUsers.forEach(user => {
         const message = {
-            id: 'MSG' + Date.now(),
+            id: 'MSG' + Date.now() + Math.random(),
             sender: state.currentUser.username,
             senderRole: state.currentRole,
             recipient: user.username,
@@ -667,7 +764,7 @@ function sendNotificationToPharmacy(transaction) {
     const pharmacyUsers = state.users.filter(u => u.role === 'pharmacy' && u.active);
     pharmacyUsers.forEach(user => {
         const message = {
-            id: 'MSG' + Date.now(),
+            id: 'MSG' + Date.now() + Math.random(),
             sender: state.currentUser.username,
             senderRole: state.currentRole,
             recipient: user.username,
@@ -684,23 +781,32 @@ function sendNotificationToPharmacy(transaction) {
     showNotification(`Nouvelle prescription pour ${transaction.patientName}`, 'info');
 }
 
-function showNotification(message, type = 'info') {
-    // Créer un toast
-    const toast = document.createElement('div');
-    toast.className = `toast-notification ${type}`;
-    toast.textContent = message;
-    document.body.appendChild(toast);
+// Nouvelle fonction : notification à la caisse
+function sendNotificationToCashier(transactions) {
+    const cashierUsers = state.users.filter(u => u.role === 'cashier' && u.active);
+    if (cashierUsers.length === 0) return;
     
-    // Jouer un son (optionnel)
-    try {
-        const audio = new Audio('data:audio/wav;base64,UklGRlwAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YVQAAABJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJ');
-        audio.volume = 0.3;
-        audio.play().catch(e => console.log('Son bloqué par le navigateur'));
-    } catch (e) {}
+    const patientName = transactions[0]?.patientName || 'Patient';
+    const totalAmount = transactions.reduce((sum, t) => sum + t.amount, 0);
+    const serviceCount = transactions.length;
     
-    setTimeout(() => {
-        toast.remove();
-    }, 4000);
+    cashierUsers.forEach(user => {
+        const message = {
+            id: 'MSG' + Date.now() + Math.random(),
+            sender: state.currentUser.username,
+            senderRole: state.currentRole,
+            recipient: user.username,
+            recipientRole: user.role,
+            subject: 'Nouvelle consultation - Paiement requis',
+            content: `Consultation pour ${patientName} : ${serviceCount} service(s), montant total : ${totalAmount} Gdes.`,
+            timestamp: new Date().toISOString(),
+            read: false,
+            type: 'cashier_notification'
+        };
+        state.messages.push(message);
+    });
+    updateMessageBadge();
+    showNotification(`Nouvelle consultation pour ${patientName} - veuillez procéder au paiement`, 'info');
 }
 
 // Initialisation du module médecin

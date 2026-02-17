@@ -1,4 +1,27 @@
 // Module Administration, Paramètres et Messagerie
+
+// Son de notification long et fort (4 secondes) - pour cohérence
+function playNotificationSound(duration = 4000, volume = 0.9) {
+    try {
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const oscillator = audioCtx.createOscillator();
+        const gainNode = audioCtx.createGain();
+        oscillator.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+        oscillator.frequency.value = 880;
+        gainNode.gain.value = volume;
+        oscillator.start();
+        oscillator.stop(audioCtx.currentTime + duration / 1000);
+    } catch (e) {
+        console.warn("Web Audio API not supported, fallback to simple beep");
+        try {
+            const audio = new Audio('data:audio/wav;base64,UklGRlwAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YVQAAABJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJ');
+            audio.volume = volume;
+            audio.play().catch(e => console.log('Son bloqué par le navigateur'));
+        } catch (e) {}
+    }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     if (document.getElementById('admin-patient-search')) {
         setupAdmin();
