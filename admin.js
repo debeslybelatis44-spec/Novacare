@@ -73,7 +73,7 @@ function searchAdminPatient() {
     document.getElementById('admin-patient-details').classList.add('hidden');
 }
 
-// Affiche les détails d'un patient (identique à l'ancien contenu de searchAdminPatient)
+// Affiche les détails d'un patient
 function displayPatientAdmin(patient) {
     // Vérifier expiration des privilèges
     if (patient.privilegeGrantedDate) {
@@ -92,8 +92,14 @@ function displayPatientAdmin(patient) {
         }
     }
     
+    // Forcer l'ID dans le champ de recherche pour les opérations ultérieures
+    document.getElementById('admin-patient-search').value = patient.id;
     document.getElementById('admin-patient-name').textContent = patient.fullName + ' (' + patient.id + ')';
     document.getElementById('admin-patient-details').classList.remove('hidden');
+    
+    // Remplir les champs de notes
+    document.getElementById('patient-allergies-admin').value = patient.allergies || '';
+    document.getElementById('patient-notes-admin').value = patient.notes || '';
     
     const privilegeSelect = document.getElementById('privilege-type');
     const discountSection = document.getElementById('discount-section');
@@ -135,7 +141,8 @@ function displayPatientAdmin(patient) {
                 <td>${t.status}</td>
                 <td>${t.type}</td>
                 <td>
-                    <button class="btn btn-sm btn-warning" onclick="selectTransactionForEdit('${t.id}')">Sélectionner</button>
+                    <button class="btn btn-sm btn-warning" onclick="editTransaction('${t.id}')">Modifier</button>
+                    <button class="btn btn-sm btn-danger" onclick="deleteTransaction('${t.id}')">Supprimer</button>
                 </td>
             </tr>`;
         });
@@ -147,7 +154,7 @@ function displayPatientAdmin(patient) {
     updateCreditDisplay(patient.id);
 }
 
-// Affiche une transaction individuelle pour modification
+// Affiche une transaction individuelle pour modification (ancienne méthode, conservée pour compatibilité)
 function displayTransactionForEdit(transaction) {
     // On remplit le champ caché
     document.getElementById('selected-transaction-id').value = transaction.id;
@@ -162,8 +169,8 @@ function displayTransactionForEdit(transaction) {
             <p><strong>Statut :</strong> ${transaction.status}</p>
             <p><strong>Date :</strong> ${transaction.date} ${transaction.time}</p>
             <div class="mt-2">
-                <button class="btn btn-warning" onclick="editTransaction()">Modifier</button>
-                <button class="btn btn-danger" onclick="deleteTransaction()">Supprimer</button>
+                <button class="btn btn-warning" onclick="editTransaction('${transaction.id}')">Modifier</button>
+                <button class="btn btn-danger" onclick="deleteTransaction('${transaction.id}')">Supprimer</button>
             </div>
         </div>
     `;
@@ -172,6 +179,30 @@ function displayTransactionForEdit(transaction) {
     document.getElementById('admin-patient-history').innerHTML = html;
     // Cacher les sections de privilèges
     document.getElementById('privilege-type').closest('.card')?.classList.add('hidden');
+}
+
+// Sauvegarde des notes du patient (nouvelle fonction)
+function savePatientNotes() {
+    const patientId = document.getElementById('admin-patient-search').value.trim();
+    if (!patientId) {
+        alert("Aucun patient sélectionné !");
+        return;
+    }
+
+    const patient = state.patients.find(p => p.id === patientId);
+    if (!patient) {
+        alert("Patient introuvable !");
+        return;
+    }
+
+    const allergies = document.getElementById('patient-allergies-admin').value.trim();
+    const notes = document.getElementById('patient-notes-admin').value.trim();
+
+    patient.allergies = allergies;
+    patient.notes = notes;
+
+    saveStateToLocalStorage();
+    alert("Notes du patient enregistrées avec succès !");
 }
 
 function savePrivilege() {
@@ -384,9 +415,8 @@ function updateRecentTransactions() {
                 <td>${transaction.createdBy}</td>
                 <td><span class="${transaction.status === 'paid' ? 'status-paid' : 'status-unpaid'}">${transaction.status === 'paid' ? 'Payé' : 'Non payé'}</span></td>
                 <td>
-                    <button class="btn btn-sm btn-warning" onclick="selectTransactionForEdit('${transaction.id}')">
-                        Sélectionner
-                    </button>
+                    <button class="btn btn-sm btn-warning" onclick="editTransaction('${transaction.id}')">Modifier</button>
+                    <button class="btn btn-sm btn-danger" onclick="deleteTransaction('${transaction.id}')">Supprimer</button>
                 </td>
             </tr>
         `;
@@ -403,9 +433,15 @@ function setupAdminExtended() {
     document.getElementById('transfer-petty-cash')?.addEventListener('click', transferToPettyCash);
     document.getElementById('view-credit-history')?.addEventListener('click', viewCreditHistory);
     
-    // Gestion des transactions
-    document.getElementById('edit-transaction-btn')?.addEventListener('click', editTransaction);
-    document.getElementById('delete-transaction-btn')?.addEventListener('click', deleteTransaction);
+    // Gestion des transactions (les boutons directs sont maintenant dans les listes)
+    document.getElementById('edit-transaction-btn')?.addEventListener('click', () => {
+        const id = document.getElementById('selected-transaction-id').value;
+        if (id) editTransaction(id);
+    });
+    document.getElementById('delete-transaction-btn')?.addEventListener('click', () => {
+        const id = document.getElementById('selected-transaction-id').value;
+        if (id) deleteTransaction(id);
+    });
     
     // Rapports
     document.getElementById('generate-report-btn')?.addEventListener('click', generateReport);
@@ -416,10 +452,10 @@ function setupAdminExtended() {
     document.getElementById('view-cashier-balances')?.addEventListener('click', viewCashierBalances);
     document.getElementById('adjust-cashier-balance')?.addEventListener('click', adjustCashierBalance);
     
-    // AJOUT : Gestion des fournisseurs
+    // Gestion des fournisseurs
     document.getElementById('manage-suppliers-btn')?.addEventListener('click', showSupplierManagement);
     
-    // AJOUT : Paiement des employés
+    // Paiement des employés
     document.getElementById('pay-employee-btn')?.addEventListener('click', showEmployeePayment);
     
     // Initialiser l'affichage
@@ -556,9 +592,8 @@ function saveSupplier(id) {
         if (index !== -1) state.suppliers[index] = supplierData;
     }
 
-    // Fermer le formulaire et rafraîchir la liste
     document.querySelector('.transaction-details-modal').remove();
-    showSupplierManagement(); // réaffiche la liste mise à jour
+    showSupplierManagement();
     saveStateToLocalStorage();
     alert("Fournisseur enregistré.");
 }
@@ -566,7 +601,7 @@ function saveSupplier(id) {
 function deleteSupplier(id) {
     if (confirm("Supprimer ce fournisseur ?")) {
         state.suppliers = state.suppliers.filter(s => s.id != id);
-        showSupplierManagement(); // rafraîchit
+        showSupplierManagement();
         saveStateToLocalStorage();
     }
 }
@@ -592,7 +627,6 @@ function renderEmployeePaymentList() {
 
     let html = '<table class="table-container"><thead><tr><th>Employé</th><th>Rôle</th><th>Dernier paiement</th><th>Actions</th></tr></thead><tbody>';
     state.users.forEach(user => {
-        // Trouver le dernier paiement
         const payments = state.employeePayments?.filter(p => p.employeeId === user.id) || [];
         const lastPayment = payments.sort((a,b) => new Date(b.date) - new Date(a.date))[0];
         const lastDate = lastPayment ? new Date(lastPayment.date).toLocaleDateString('fr-FR') + ' - ' + lastPayment.amount + ' Gdes' : 'Aucun';
@@ -626,7 +660,6 @@ function payEmployee(employeeId) {
     const date = prompt("Date du paiement (YYYY-MM-DD) :", new Date().toISOString().split('T')[0]);
     if (!date) return;
 
-    // Enregistrer le paiement
     const payment = {
         id: 'PAY' + Date.now(),
         employeeId: employeeId,
@@ -639,7 +672,6 @@ function payEmployee(employeeId) {
     if (!state.employeePayments) state.employeePayments = [];
     state.employeePayments.push(payment);
 
-    // Déduire de la caisse principale ? (optionnel)
     if (confirm("Déduire ce montant de la grande caisse ?")) {
         if (state.mainCash >= amount) {
             state.mainCash -= amount;
@@ -650,7 +682,6 @@ function payEmployee(employeeId) {
 
     saveStateToLocalStorage();
     alert("Paiement enregistré.");
-    // Rafraîchir la liste
     showEmployeePayment();
 }
 
@@ -680,18 +711,15 @@ function viewEmployeePayments(employeeId) {
 // ==================== FIN DES AJOUTS ====================
 
 function updateAdminExtendedDisplay() {
-    // Mettre à jour les affichages des caisses
     const mainCashElement = document.getElementById('main-cash-balance');
     const pettyCashElement = document.getElementById('petty-cash-balance');
     
     if (mainCashElement) mainCashElement.textContent = state.mainCash.toLocaleString() + ' Gdes';
     if (pettyCashElement) pettyCashElement.textContent = state.pettyCash.toLocaleString() + ' Gdes';
     
-    // Mettre à jour les totaux par utilisateur
     updateUserTransactionTotals();
 }
 
-// Ajouter un crédit à un patient (fonction pour ajouter du crédit manuellement)
 function addPatientCredit() {
     const patientId = document.getElementById('admin-patient-search').value.trim();
     const creditAmount = parseFloat(document.getElementById('credit-amount').value);
@@ -708,16 +736,13 @@ function addPatientCredit() {
         return;
     }
     
-    // Vérifier si le patient a le privilège crédit
     if (!patient.hasCreditPrivilege) {
         alert("Le patient n'a pas le privilège crédit! Veuillez d'abord lui attribuer ce privilège.");
         return;
     }
     
-    // Augmenter la limite de crédit
     patient.creditLimit = (patient.creditLimit || 0) + creditAmount;
     
-    // Mettre à jour le compte crédit
     if (!state.creditAccounts[patientId]) {
         state.creditAccounts[patientId] = {
             balance: 0,
@@ -731,7 +756,6 @@ function addPatientCredit() {
         state.creditAccounts[patientId].available = state.creditAccounts[patientId].limit - state.creditAccounts[patientId].used;
     }
     
-    // Ajouter à l'historique
     state.creditAccounts[patientId].history.push({
         date: new Date().toISOString().split('T')[0],
         time: new Date().toLocaleTimeString('fr-FR'),
@@ -743,16 +767,13 @@ function addPatientCredit() {
     
     alert(`Crédit de ${creditAmount} Gdes ajouté au patient ${patient.fullName}. Nouvelle limite: ${patient.creditLimit} Gdes`);
     
-    // Réinitialiser le formulaire
     document.getElementById('credit-amount').value = '';
     document.getElementById('credit-note').value = '';
     
-    // Mettre à jour l'affichage
     searchAdminPatient();
     updateCreditDisplay(patientId);
 }
 
-// Transférer de la grande caisse vers la petite caisse
 function transferToPettyCash() {
     const amount = parseFloat(document.getElementById('petty-cash-amount').value);
     
@@ -770,7 +791,6 @@ function transferToPettyCash() {
         state.mainCash -= amount;
         state.pettyCash += amount;
         
-        // Enregistrer la transaction de transfert
         const transferRecord = {
             id: 'TRANSFER' + Date.now(),
             date: new Date().toISOString().split('T')[0],
@@ -787,13 +807,11 @@ function transferToPettyCash() {
         
         alert(`Transfert de ${amount} Gdes effectué avec succès!`);
         
-        // Mettre à jour l'affichage
         updateAdminExtendedDisplay();
         document.getElementById('petty-cash-amount').value = '';
     }
 }
 
-// Afficher l'historique des crédits
 function viewCreditHistory(patientId = null) {
     if (!patientId) {
         patientId = document.getElementById('admin-patient-search').value.trim();
@@ -852,9 +870,11 @@ function viewCreditHistory(patientId = null) {
     document.body.appendChild(modal);
 }
 
-// Modifier une transaction existante
-function editTransaction() {
-    const transactionId = document.getElementById('selected-transaction-id').value;
+// Modifier une transaction (peut être appelée directement avec un ID)
+function editTransaction(transactionId) {
+    if (!transactionId) {
+        transactionId = document.getElementById('selected-transaction-id').value;
+    }
     if (!transactionId) {
         alert("Veuillez sélectionner une transaction!");
         return;
@@ -866,7 +886,6 @@ function editTransaction() {
         return;
     }
     
-    // Vérifier les permissions
     if (state.currentRole === 'responsible' && !state.roles.responsible.canModifyAllTransactions) {
         alert("Vous n'avez pas la permission de modifier les transactions!");
         return;
@@ -881,20 +900,16 @@ function editTransaction() {
     const oldAmount = transaction.amount;
     transaction.amount = newAmount;
     
-    // Mettre à jour les soldes si la transaction était payée
     if (transaction.status === 'paid') {
         const difference = newAmount - oldAmount;
         
-        // Mettre à jour le solde du caissier si applicable
         if (state.cashierBalances[transaction.paymentAgent]) {
             state.cashierBalances[transaction.paymentAgent].balance += difference;
         }
         
-        // Mettre à jour la grande caisse
         state.mainCash += difference;
     }
     
-    // Ajouter une note d'audit
     transaction.modifications = transaction.modifications || [];
     transaction.modifications.push({
         date: new Date().toISOString().split('T')[0],
@@ -910,9 +925,11 @@ function editTransaction() {
     updateRecentTransactions();
 }
 
-// Supprimer une transaction
-function deleteTransaction() {
-    const transactionId = document.getElementById('selected-transaction-id').value;
+// Supprimer une transaction (peut être appelée directement avec un ID)
+function deleteTransaction(transactionId) {
+    if (!transactionId) {
+        transactionId = document.getElementById('selected-transaction-id').value;
+    }
     if (!transactionId) {
         alert("Veuillez sélectionner une transaction!");
         return;
@@ -924,7 +941,6 @@ function deleteTransaction() {
         return;
     }
     
-    // Vérifier les permissions
     if (state.currentRole === 'responsible' && !state.roles.responsible.canDeleteAllTransactions) {
         alert("Vous n'avez pas la permission de supprimer les transactions!");
         return;
@@ -934,18 +950,14 @@ function deleteTransaction() {
         return;
     }
     
-    // Annuler l'effet sur les caisses si la transaction était payée
     if (transaction.status === 'paid') {
-        // Rembourser la grande caisse
         state.mainCash -= transaction.amount;
         
-        // Rembourser le caissier si applicable
         if (state.cashierBalances[transaction.paymentAgent]) {
             state.cashierBalances[transaction.paymentAgent].balance -= transaction.amount;
         }
     }
     
-    // Supprimer la transaction
     state.transactions = state.transactions.filter(t => t.id !== transactionId);
     
     alert("Transaction supprimée avec succès!");
@@ -953,7 +965,6 @@ function deleteTransaction() {
     updateRecentTransactions();
 }
 
-// Générer un rapport complet
 function generateReport() {
     const reportType = document.getElementById('report-type').value;
     const startDate = document.getElementById('report-start-date').value;
@@ -989,11 +1000,9 @@ function generateReport() {
             return;
     }
     
-    // Afficher le rapport
     displayReport(title, reportData);
 }
 
-// Générer un rapport financier
 function generateFinancialReport(startDate, endDate) {
     const filteredTransactions = state.transactions.filter(t => {
         if (startDate && t.date < startDate) return false;
@@ -1014,7 +1023,6 @@ function generateFinancialReport(startDate, endDate) {
         byServiceType[t.type] = (byServiceType[t.type] || 0) + t.amount;
     });
     
-    // Calculer le total des crédits utilisés
     let totalCreditUsed = 0;
     for (const patientId in state.creditAccounts) {
         const account = state.creditAccounts[patientId];
@@ -1037,7 +1045,6 @@ function generateFinancialReport(startDate, endDate) {
     };
 }
 
-// Générer un rapport des transactions
 function generateTransactionReport(startDate, endDate) {
     const filteredTransactions = state.transactions.filter(t => {
         if (startDate && t.date < startDate) return false;
@@ -1052,7 +1059,6 @@ function generateTransactionReport(startDate, endDate) {
     };
 }
 
-// Générer un rapport des patients
 function generatePatientReport(startDate, endDate) {
     const filteredPatients = state.patients.filter(p => {
         if (startDate && p.registrationDate < startDate) return false;
@@ -1073,7 +1079,6 @@ function generatePatientReport(startDate, endDate) {
     };
 }
 
-// Générer un rapport des services
 function generateServiceReport(startDate, endDate) {
     const filteredTransactions = state.transactions.filter(t => {
         if (startDate && t.date < startDate) return false;
@@ -1097,7 +1102,6 @@ function generateServiceReport(startDate, endDate) {
     };
 }
 
-// Afficher le rapport
 function displayReport(title, data) {
     const modal = document.createElement('div');
     modal.className = 'transaction-details-modal';
@@ -1169,7 +1173,6 @@ function displayReport(title, data) {
     document.body.appendChild(modal);
 }
 
-// Générer un rapport utilisateur
 function generateUserReport() {
     const users = state.users;
     const userReport = {};
@@ -1201,7 +1204,6 @@ function generateUserReport() {
     displayUserReport(userReport);
 }
 
-// Afficher le rapport utilisateur
 function displayUserReport(userReport) {
     const modal = document.createElement('div');
     modal.className = 'transaction-details-modal';
@@ -1261,7 +1263,6 @@ function displayUserReport(userReport) {
     document.body.appendChild(modal);
 }
 
-// Voir les soldes des caissiers
 function viewCashierBalances() {
     const modal = document.createElement('div');
     modal.className = 'transaction-details-modal';
@@ -1318,7 +1319,6 @@ function viewCashierBalances() {
     document.body.appendChild(modal);
 }
 
-// Ajuster le solde d'un caissier
 function adjustCashierBalancePrompt(username) {
     const currentBalance = state.cashierBalances[username].balance;
     const adjustment = parseFloat(prompt(`Solde actuel: ${currentBalance} Gdes\nMontant d'ajustement (positif pour ajouter, négatif pour retirer):`, 0));
@@ -1341,7 +1341,6 @@ function adjustCashierBalancePrompt(username) {
     
     state.cashierBalances[username].balance += adjustment;
     
-    // Enregistrer l'ajustement
     state.cashierBalances[username].transactions = state.cashierBalances[username].transactions || [];
     state.cashierBalances[username].transactions.push({
         date: new Date().toISOString().split('T')[0],
@@ -1357,7 +1356,6 @@ function adjustCashierBalancePrompt(username) {
     viewCashierBalances();
 }
 
-// Mettre à jour les totaux par utilisateur
 function updateUserTransactionTotals() {
     const container = document.getElementById('user-transaction-totals');
     if (!container) return;
@@ -1384,9 +1382,6 @@ function updateUserTransactionTotals() {
                     <button class="btn btn-info btn-sm" onclick="viewUserTransactions('${username}')">
                         Voir
                     </button>
-                    <button class="btn btn-warning btn-sm" onclick="editUserTransactions('${username}')">
-                        Modifier
-                    </button>
                 </td>
             </tr>
         `;
@@ -1396,7 +1391,6 @@ function updateUserTransactionTotals() {
     container.innerHTML = html;
 }
 
-// Voir les transactions d'un utilisateur
 function viewUserTransactions(username) {
     const userTransactions = state.transactions.filter(t => t.createdBy === username);
     const user = state.users.find(u => u.username === username);
@@ -1429,9 +1423,8 @@ function viewUserTransactions(username) {
                 <td>${t.amount} Gdes</td>
                 <td>${t.status}</td>
                 <td>
-                    <button class="btn btn-warning btn-sm" onclick="selectTransactionForEdit('${t.id}')">
-                        Sélectionner
-                    </button>
+                    <button class="btn btn-warning btn-sm" onclick="editTransaction('${t.id}')">Modifier</button>
+                    <button class="btn btn-danger btn-sm" onclick="deleteTransaction('${t.id}')">Supprimer</button>
                 </td>
             </tr>
         `;
@@ -1449,13 +1442,6 @@ function viewUserTransactions(username) {
     document.body.appendChild(modal);
 }
 
-// Sélectionner une transaction pour modification
-function selectTransactionForEdit(transactionId) {
-    document.getElementById('selected-transaction-id').value = transactionId;
-    alert(`Transaction ${transactionId} sélectionnée pour modification`);
-}
-
-// Exporter un rapport en CSV
 function exportReportToCSV() {
     const reportType = document.getElementById('report-type').value;
     const startDate = document.getElementById('report-start-date').value;
@@ -1495,7 +1481,6 @@ function exportReportToCSV() {
     document.body.removeChild(link);
 }
 
-// Imprimer un rapport
 function printReport() {
     const reportModal = document.querySelector('.transaction-details-modal:last-child');
     if (!reportModal) return;
@@ -1523,7 +1508,6 @@ function printReport() {
     printWindow.print();
 }
 
-// Mettre à jour l'affichage du crédit dans la section patient
 function updateCreditDisplay(patientId) {
     const patient = state.patients.find(p => p.id === patientId);
     const creditAccount = state.creditAccounts[patientId];
@@ -1555,7 +1539,6 @@ function updateCreditDisplay(patientId) {
     }
 }
 
-// Utiliser le crédit d'un patient
 function usePatientCreditPrompt(patientId = null) {
     if (!patientId) {
         patientId = document.getElementById('admin-patient-search').value.trim();
@@ -1574,7 +1557,6 @@ function usePatientCreditPrompt(patientId = null) {
         return;
     }
     
-    // Trouver les transactions impayées du patient
     const unpaidTransactions = state.transactions.filter(t => 
         t.patientId === patientId && 
         t.status === 'unpaid' &&
@@ -1586,7 +1568,6 @@ function usePatientCreditPrompt(patientId = null) {
         return;
     }
     
-    // Appliquer le crédit aux transactions
     let remainingCredit = amountToUse;
     for (const transaction of unpaidTransactions) {
         if (remainingCredit <= 0) break;
@@ -1605,11 +1586,9 @@ function usePatientCreditPrompt(patientId = null) {
             transaction.status = 'partial';
         }
         
-        // Mettre à jour le compte crédit
         creditAccount.used += amountToPay;
         creditAccount.available -= amountToPay;
         
-        // Ajouter à l'historique du crédit
         creditAccount.history.push({
             date: new Date().toISOString().split('T')[0],
             time: new Date().toLocaleTimeString('fr-FR'),
@@ -1621,7 +1600,6 @@ function usePatientCreditPrompt(patientId = null) {
         });
     }
     
-    // Mettre à jour le patient
     const patient = state.patients.find(p => p.id === patientId);
     if (patient) {
         patient.creditUsed = creditAccount.used;
@@ -1639,7 +1617,6 @@ function setupSettings() {
     document.getElementById('hospital-logo').addEventListener('change', handleLogoUpload);
     document.getElementById('save-hospital-info-btn').addEventListener('click', saveHospitalInfo);
     
-    // Consultation Types
     document.getElementById('add-consultation-type').addEventListener('click', () => {
         const name = document.getElementById('new-consultation-type-name').value.trim();
         const price = parseFloat(document.getElementById('new-consultation-type-price').value);
@@ -1667,7 +1644,6 @@ function setupSettings() {
         alert("Type de consultation ajouté avec succès!");
     });
     
-    // Vital Types
     document.getElementById('add-vital-type').addEventListener('click', () => {
         const name = document.getElementById('new-vital-name').value.trim();
         const unit = document.getElementById('new-vital-unit').value.trim();
@@ -1698,7 +1674,6 @@ function setupSettings() {
         alert("Signe vital ajouté avec succès!");
     });
     
-    // Lab Analysis Types
     document.getElementById('add-lab-analysis-type').addEventListener('click', () => {
         const name = document.getElementById('new-lab-analysis-name').value.trim();
         const price = parseFloat(document.getElementById('new-lab-analysis-price').value);
@@ -1725,7 +1700,6 @@ function setupSettings() {
         alert("Type d'analyse ajouté avec succès!");
     });
     
-    // External Service Types
     document.getElementById('add-external-service-type').addEventListener('click', () => {
         const name = document.getElementById('new-external-service-type-name').value.trim();
         const price = parseFloat(document.getElementById('new-external-service-type-price').value);
@@ -1750,7 +1724,6 @@ function setupSettings() {
         alert("Service externe ajouté avec succès!");
     });
     
-    // Users
     document.getElementById('add-user').addEventListener('click', () => {
         const name = document.getElementById('new-user-name').value.trim();
         const role = document.getElementById('new-user-role').value;
@@ -1762,7 +1735,6 @@ function setupSettings() {
             return;
         }
         
-        // Vérifier si l'utilisateur existe déjà
         const existingUser = state.users.find(u => u.username === username);
         if (existingUser) {
             alert("Ce nom d'utilisateur existe déjà!");
@@ -1795,7 +1767,6 @@ function handleLogoUpload(event) {
     const file = event.target.files[0];
     if (!file) return;
     
-    // Vérifier la taille du fichier (max 2MB)
     if (file.size > 2 * 1024 * 1024) {
         alert("Le fichier est trop volumineux. Taille maximale: 2MB");
         return;
@@ -1824,7 +1795,6 @@ function saveHospitalInfo() {
         return;
     }
     
-    // Mettre à jour les en-têtes
     document.getElementById('hospital-name-header').textContent = name;
     document.getElementById('hospital-address-header').textContent = address;
     document.getElementById('hospital-name-login').textContent = name;
@@ -1922,7 +1892,6 @@ function deleteMedicationSettings(medId) {
 }
 
 function updateSettingsDisplay() {
-    // Consultation Types
     const consultationList = document.getElementById('consultation-types-list');
     if (consultationList) {
         let html = '<table class="table-container"><thead><tr><th>Nom</th><th>Prix</th><th>Description</th><th>Actif</th><th>Actions</th></tr></thead><tbody>';
@@ -1946,10 +1915,9 @@ function updateSettingsDisplay() {
         consultationList.innerHTML = html;
     }
     
-    // Vital Types
     const vitalsList = document.getElementById('vitals-types-list');
     if (vitalsList) {
-        html = '<table class="table-container"><thead><tr><th>Nom</th><th>Unité</th><th>Valeur min</th><th>Valeur max</th><th>Actif</th><th>Actions</th></tr></thead><tbody>';
+        let html = '<table class="table-container"><thead><tr><th>Nom</th><th>Unité</th><th>Valeur min</th><th>Valeur max</th><th>Actif</th><th>Actions</th></tr></thead><tbody>';
         
         state.vitalTypes.forEach(vital => {
             html += `
@@ -1971,10 +1939,9 @@ function updateSettingsDisplay() {
         vitalsList.innerHTML = html;
     }
     
-    // Lab Analysis Types
     const labList = document.getElementById('lab-analyses-types-list');
     if (labList) {
-        html = '<table class="table-container"><thead><tr><th>Nom</th><th>Prix</th><th>Type résultat</th><th>Actif</th><th>Actions</th></tr></thead><tbody>';
+        let html = '<table class="table-container"><thead><tr><th>Nom</th><th>Prix</th><th>Type résultat</th><th>Actif</th><th>Actions</th></tr></thead><tbody>';
         
         state.labAnalysisTypes.forEach(analysis => {
             html += `
@@ -1995,10 +1962,9 @@ function updateSettingsDisplay() {
         labList.innerHTML = html;
     }
     
-    // External Service Types
     const externalList = document.getElementById('external-services-types-list');
     if (externalList) {
-        html = '<table class="table-container"><thead><tr><th>Nom</th><th>Prix</th><th>Actif</th><th>Actions</th></tr></thead><tbody>';
+        let html = '<table class="table-container"><thead><tr><th>Nom</th><th>Prix</th><th>Actif</th><th>Actions</th></tr></thead><tbody>';
         
         state.externalServiceTypes.forEach(service => {
             html += `
@@ -2020,7 +1986,6 @@ function updateSettingsDisplay() {
     
     updateUsersList();
     
-    // Mettre à jour les selects dans d'autres modules
     if (typeof updateConsultationTypesSelect === 'function') updateConsultationTypesSelect();
     if (typeof updateVitalsInputs === 'function') updateVitalsInputs();
     if (typeof updateLabAnalysesSelect === 'function') updateLabAnalysesSelect();
